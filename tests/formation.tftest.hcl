@@ -1,0 +1,139 @@
+# =============================================================================
+# Formation Tests
+# =============================================================================
+
+mock_provider "kubernetes" {}
+mock_provider "random" {}
+
+variables {
+  name        = "myapp"
+  namespace   = "myapp-test"
+  environment = "test"
+  image       = "ghcr.io/acme/myapp:1.0.0"
+  domain      = "myapp.example.com"
+
+  registry_username = "ci"
+  registry_password = "token"
+
+  formation = {
+    web = {
+      web                = true
+      ports              = { http = 3000 }
+      startup_probe_path = "/healthz"
+    }
+    worker = {
+      args = ["bundle", "exec", "sidekiq"]
+    }
+  }
+}
+
+# Test: Heroku-like process naming (web keeps the bare app name)
+run "process_naming" {
+  command = plan
+
+  assert {
+    condition     = output.web_deployment_name == "myapp"
+    error_message = "Web process should keep the bare app name"
+  }
+
+  assert {
+    condition     = output.deployment_names.web == "myapp" && output.deployment_names.worker == "myapp-worker" && length(output.deployment_names) == 2
+    error_message = "Non-web processes should be named <name>-<process>"
+  }
+
+  assert {
+    condition     = output.image == "ghcr.io/acme/myapp:1.0.0"
+    error_message = "Image output should echo var.image"
+  }
+}
+
+# Test: namespace created and labelled by default
+run "namespace_created" {
+  command = plan
+
+  assert {
+    condition     = kubernetes_namespace_v1.ns[0].metadata[0].name == "myapp-test"
+    error_message = "Namespace should be created with var.namespace"
+  }
+
+  assert {
+    condition     = kubernetes_namespace_v1.ns[0].metadata[0].labels["myapp/environment"] == "test"
+    error_message = "Namespace should carry the <name>/environment label"
+  }
+
+  assert {
+    condition     = kubernetes_namespace_v1.ns[0].metadata[0].labels["app.kubernetes.io/part-of"] == "myapp"
+    error_message = "Namespace should carry the part-of label"
+  }
+
+  assert {
+    condition     = output.namespace == "myapp-test"
+    error_message = "Namespace output should match var.namespace"
+  }
+}
+
+# Test: caller-owned namespace (composition roots)
+run "namespace_not_created" {
+  command = plan
+
+  variables {
+    create_namespace = false
+  }
+
+  assert {
+    condition     = length(kubernetes_namespace_v1.ns) == 0
+    error_message = "No namespace resource should be created when create_namespace = false"
+  }
+
+  assert {
+    condition     = output.namespace == "myapp-test"
+    error_message = "Namespace output should still be var.namespace"
+  }
+}
+
+# Test: SECRET_KEY_BASE generated + content-hash named Secret/ConfigMap
+run "shared_env_objects" {
+  command = apply
+
+  assert {
+    condition     = random_id.secret_key_base.byte_length == 64
+    error_message = "Generated SECRET_KEY_BASE should be 64 random bytes"
+  }
+
+  assert {
+    condition     = startswith(output.secret_name, "myapp-secrets-")
+    error_message = "Shared Secret should be name-prefixed and content-hash suffixed"
+  }
+
+  assert {
+    condition     = startswith(output.config_map_name, "myapp-config-")
+    error_message = "Shared ConfigMap should be name-prefixed and content-hash suffixed"
+  }
+}
+
+# Test: formation validation — a web process is mandatory
+run "validation_requires_web" {
+  command = plan
+
+  variables {
+    formation = {
+      worker = { args = ["bundle", "exec", "sidekiq"] }
+    }
+  }
+
+  expect_failures = [var.formation]
+}
+
+# Test: formation validation — a single web process
+run "validation_rejects_multiple_web" {
+  command = plan
+
+  variables {
+    formation = {
+      web  = { web = true, ports = { http = 3000 } }
+      web2 = { web = true, ports = { http = 3001 } }
+    }
+  }
+
+  expect_failures = [var.formation]
+}

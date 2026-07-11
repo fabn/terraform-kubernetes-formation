@@ -1,0 +1,32 @@
+# Lefthook configuration for git hooks
+# https://github.com/evilmartians/lefthook/blob/master/docs/configuration.md
+
+min_version: 1.7.0
+
+pre-push: &pre-push
+  parallel: true
+  commands:
+    actionlint:
+      glob: ".github/workflows/**.*"
+      run: actionlint
+    terraform-format:
+      glob: "*.{tf,hcl}"
+      exclude: ".lock.hcl"
+      run: terraform fmt -check -recursive {push_files}
+    terraform-validate:
+      glob: "*.tf"
+      run: terraform validate -no-color
+
+pre-commit:
+  commands:
+    actionlint:
+      glob: ".github/workflows/**.*"
+      run: actionlint
+    terraform-format:
+      glob: "*.{tf,hcl}"
+      exclude: ".lock.hcl"
+      stage_fixed: true
+      run: terraform fmt {staged_files}
+
+# Run all validations manually with: lefthook run validate-all
+validate-all: *pre-push
