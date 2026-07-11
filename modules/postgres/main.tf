@@ -1,6 +1,6 @@
 # Bitnami Postgres addon. The password is generated per instance and stays in
 # TF state + the auth Secret, so ephemeral environments need no plaintext
-# secret anywhere. Extracted from modules/annamode/database.tf.
+# secret anywhere.
 
 locals {
   host = "${var.name}-postgresql"

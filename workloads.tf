@@ -1,5 +1,5 @@
 # One fabn/workload/kubernetes instance per formation entry. The web process
-# keeps the bare app name (Heroku-like: `annamode` + `annamode-worker`), gets
+# keeps the bare app name (Heroku-like: `myapp` + `myapp-worker`), gets
 # the Service/Ingress/probes; every other process runs headless with
 # `service_type = null` — a containerPort may still be declared (e.g. an
 # in-process metrics exporter reached on the pod IP by autodiscovery checks).
