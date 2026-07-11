@@ -34,7 +34,14 @@ resource "helm_release" "postgres" {
   version    = var.chart_version
   repository = "oci://registry-1.docker.io/bitnamicharts"
 
-  values = [file("${path.module}/postgres-values.yaml")]
+  values = [
+    templatefile("${path.module}/postgres-values.yaml", {
+      storageSize    = var.storage_size
+      cpuRequests    = var.cpu_requests
+      memoryRequests = var.memory_requests
+      memoryLimits   = var.memory_limits
+    })
+  ]
 
   set = [
     {
@@ -48,22 +55,6 @@ resource "helm_release" "postgres" {
     {
       name  = "auth.existingSecret"
       value = kubernetes_secret_v1.pg_auth.metadata[0].name
-    },
-    {
-      name  = "primary.persistence.size"
-      value = var.storage_size
-    },
-    {
-      name  = "primary.resources.requests.cpu"
-      value = var.cpu_requests
-    },
-    {
-      name  = "primary.resources.requests.memory"
-      value = var.memory_requests
-    },
-    {
-      name  = "primary.resources.limits.memory"
-      value = var.memory_limits
     },
   ]
 }

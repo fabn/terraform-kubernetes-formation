@@ -11,15 +11,15 @@ image:
 
 primary:
   persistence:
-    size: 5Gi
+    size: ${storageSize}
   startupProbe:
     enabled: true
   resources:
     requests:
-      cpu: 50m
-      memory: 128Mi
+      cpu: ${cpuRequests}
+      memory: ${memoryRequests}
     limits:
-      memory: 384Mi
+      memory: ${memoryLimits}
   # Persist a .kopiaignore at the root of the postgres data PVC so Velero's
   # filesystem backup (Kopia) skips live PGDATA — the recoverable artifact is
   # the pg_dump file produced by the daily schedule's pre-hook (velero.tf). The

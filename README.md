@@ -131,7 +131,7 @@ they outgrow incubation here.
 | terraform | >= 1.9 |
 | kubernetes | ~> 2.25 |
 | random | ~> 3.6 |
-| helm (addons only) | >= 2.0 (redis), ~> 3.0 (postgres) |
+| helm (addons only) | ~> 3.0 |
 
 ## Inputs
 

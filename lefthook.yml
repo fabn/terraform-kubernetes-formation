@@ -1,7 +1,7 @@
 # Lefthook configuration for git hooks
 # https://github.com/evilmartians/lefthook/blob/master/docs/configuration.md
 
-min_version: 1.7.0
+min_version: 2.0.0
 
 pre-push: &pre-push
   parallel: true
