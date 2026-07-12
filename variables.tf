@@ -25,14 +25,24 @@ variable "image" {
 }
 
 variable "domain" {
-  description = "Public hostname served by the web process ingress."
+  description = "Public hostname served by the web process ingress. Required when the formation defines a web process."
   type        = string
+  default     = null
+  nullable    = true
+
+  validation {
+    condition     = var.domain != null || length([for k, p in var.formation : k if p.web]) == 0
+    error_message = "domain is required when the formation defines a web process."
+  }
 }
 
 # Heroku-style process formation: one entry per process type, deployed as an
-# instance of fabn/workload/kubernetes. Exactly one entry must set `web = true`;
-# it gets the Service + Ingress + HTTP probes, every other process runs
-# headless (no Service) and is restarted by the kubelet on process exit.
+# instance of fabn/workload/kubernetes. At most one entry may set `web = true`
+# (a single `domain` feeds a single ingress, and the web process takes the
+# bare app name); it gets the Service + Ingress + HTTP probes, every other
+# process runs headless (no Service) and is restarted by the kubelet on
+# process exit. Worker-only stacks (queue consumers, schedulers) simply omit
+# the web entry.
 variable "formation" {
   description = "Map of process name => process spec. The web process serves HTTP behind the ingress; non-web processes (worker, metrics, ...) run without a Service."
   type = map(object({
@@ -51,8 +61,8 @@ variable "formation" {
   }))
 
   validation {
-    condition     = length([for k, p in var.formation : k if p.web]) == 1
-    error_message = "Exactly one formation entry must set web = true."
+    condition     = length([for k, p in var.formation : k if p.web]) <= 1
+    error_message = "At most one formation entry may set web = true."
   }
 }
 

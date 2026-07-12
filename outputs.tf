@@ -7,8 +7,8 @@ output "image" {
 }
 
 output "web_deployment_name" {
-  description = "Name of the web process Deployment (equals var.name)."
-  value       = var.name
+  description = "Name of the web process Deployment (equals var.name); null when the formation has no web process."
+  value       = one([for k, p in var.formation : var.name if p.web])
 }
 
 output "deployment_names" {

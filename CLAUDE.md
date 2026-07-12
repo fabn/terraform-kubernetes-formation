@@ -8,17 +8,24 @@ Terraform module for deploying Heroku-style application stacks on Kubernetes.
 Published on Terraform Registry as `fabn/formation/kubernetes`.
 
 The core takes a Heroku-Procfile-like `formation` map; each entry becomes one
-`fabn/workload/kubernetes` instance. Exactly one entry sets `web = true`
+`fabn/workload/kubernetes` instance. At most one entry sets `web = true`
 (enforced by validation) and gets Service + Ingress + probes; every other
-process runs headless. The module also creates a shared Secret/ConfigMap
-(content-hash named), a generated `SECRET_KEY_BASE` and a registry pull
-secret. It is framework-neutral: nothing injects `RAILS_ENV` — callers pass it
+process runs headless. Worker-only stacks simply omit the web entry. The
+module also creates a shared Secret/ConfigMap (content-hash named), a
+generated `SECRET_KEY_BASE` and a registry pull secret. It is framework-neutral: nothing injects `RAILS_ENV` — callers pass it
 via `env`.
 
 Backing services are **addons** under `modules/`: independent submodules with
 a uniform contract — outputs `env` (plaintext config) and `sensitive_env`
 (credentials) merged into the stack by the caller, Heroku-addon style. New
 services are new addon modules, never new toggles in the core.
+
+## Contribution Conventions
+
+- **English everywhere** — code, comments, commit messages, issues, PRs.
+- **PRs**: use `Closes #<n>` when the PR addresses a tracked issue; keep the
+  description coherent with what is actually implemented — if the diff
+  changes during review, update the description before merging.
 
 ## Commands
 

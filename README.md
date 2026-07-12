@@ -15,9 +15,11 @@ the building block it composes.
 
 - **Formation**: Heroku-Procfile-like map of processes; each entry becomes one
   `fabn/workload/kubernetes` instance sharing the same image
-- **Web process**: exactly one entry sets `web = true` (enforced by validation)
-  and gets the Service, the Ingress and the HTTP probes; every other process
-  runs headless and is restarted by the kubelet on process exit
+- **Web process**: at most one entry sets `web = true` (enforced by
+  validation) and gets the Service, the Ingress and the HTTP probes; every
+  other process runs headless and is restarted by the kubelet on process
+  exit. Worker-only stacks (queue consumers, schedulers) simply omit the web
+  entry
 - **Shared env**: one ConfigMap (`env`) + one Secret (`secret_env`) sourced by
   every process, content-hash named so changes roll the deployments
 - **Generated `SECRET_KEY_BASE`**: nothing sensitive needs to live in plaintext
@@ -143,7 +145,6 @@ they outgrow incubation here.
 | `namespace` | Kubernetes namespace to deploy into | `string` |
 | `environment` | Logical environment name (staging, production, review-pr-123, …) | `string` |
 | `image` | Full image reference (registry/repo:tag) shared by every process | `string` |
-| `domain` | Public hostname served by the web process ingress | `string` |
 | `formation` | Map of process name => process spec (see below) | `map(object)` |
 | `registry_username` | Username for the registry imagePullSecret | `string` |
 | `registry_password` | Password/token for the registry imagePullSecret | `string` |
@@ -152,7 +153,7 @@ they outgrow incubation here.
 
 | Name | Description | Type | Default |
 |------|-------------|------|---------|
-| `web` | Marks the (single) HTTP process behind the ingress | `bool` | `false` |
+| `web` | Marks the (at most one) HTTP process behind the ingress | `bool` | `false` |
 | `command` | Container command override | `list(string)` | `null` |
 | `args` | Container args | `list(string)` | `null` |
 | `replicas` | Replica count | `number` | `1` |
@@ -169,6 +170,7 @@ they outgrow incubation here.
 
 | Name | Description | Type | Default |
 |------|-------------|------|---------|
+| `domain` | Public hostname served by the web process ingress (required when the formation has a web process) | `string` | `null` |
 | `create_namespace` | Create the namespace (`false` for composition roots) | `bool` | `true` |
 | `env` | Plaintext env vars for every process (ConfigMap) | `map(string)` | `{}` |
 | `secret_env` | Sensitive env vars for every process (Secret) | `map(string)` | `{}` |
@@ -187,7 +189,7 @@ they outgrow incubation here.
 |------|-------------|
 | `namespace` | Namespace the stack is deployed into |
 | `image` | Image reference in use |
-| `web_deployment_name` | Name of the web process Deployment (equals `name`) |
+| `web_deployment_name` | Name of the web process Deployment (equals `name`); `null` without a web process |
 | `deployment_names` | Map of formation key => Deployment name |
 | `secret_name` | Name of the shared env Secret (content-hash suffixed) |
 | `config_map_name` | Name of the shared env ConfigMap (content-hash suffixed) |

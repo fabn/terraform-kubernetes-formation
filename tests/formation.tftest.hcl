@@ -111,17 +111,37 @@ run "shared_env_objects" {
   }
 }
 
-# Test: formation validation — a web process is mandatory
-run "validation_requires_web" {
+# Test: worker-only stacks are valid (no web process, no domain)
+run "worker_only_formation" {
   command = plan
 
   variables {
+    domain = null
     formation = {
       worker = { args = ["bundle", "exec", "sidekiq"] }
     }
   }
 
-  expect_failures = [var.formation]
+  assert {
+    condition     = output.web_deployment_name == null
+    error_message = "web_deployment_name should be null without a web process"
+  }
+
+  assert {
+    condition     = output.deployment_names.worker == "myapp-worker" && length(output.deployment_names) == 1
+    error_message = "Worker-only formation should deploy just the worker"
+  }
+}
+
+# Test: a web process requires a domain
+run "validation_web_requires_domain" {
+  command = plan
+
+  variables {
+    domain = null
+  }
+
+  expect_failures = [var.domain]
 }
 
 # Test: formation validation — a single web process

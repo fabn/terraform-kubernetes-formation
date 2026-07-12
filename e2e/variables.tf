@@ -25,6 +25,8 @@ variable "image" {
 variable "domain" {
   description = "Public hostname served by the web process ingress"
   type        = string
+  default     = null
+  nullable    = true
 }
 
 variable "create_namespace" {
