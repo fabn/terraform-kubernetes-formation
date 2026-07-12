@@ -25,7 +25,7 @@ jobs:
           config: .github/kind-config.yml
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@v4
 
       - name: Terraform Init
         run: terraform -chdir=e2e init
