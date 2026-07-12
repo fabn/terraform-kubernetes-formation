@@ -30,6 +30,10 @@ the building block it composes.
   `memcached`) with a uniform contract — outputs `env` (plaintext config) and
   `sensitive_env` (credentials) the caller merges into the stack, Heroku-addon
   style
+- **One-off Jobs**: the `run` submodule is the `heroku run` / release-phase
+  equivalent — a Job that inherits the runtime environment of a deployed
+  process (envFrom, pull secrets, service account) to run a one-shot command
+  (migrations, seeds, arbitrary tasks)
 
 ## Usage
 
@@ -224,6 +228,60 @@ Plain memcached on `fabn/workload/kubernetes`, deliberately ephemeral (no PVC).
 - `env`: `MEMCACHIER_SERVERS` (Heroku-addon legacy var name, kept for config
   parity across deploy targets)
 - `sensitive_env`: empty
+
+## One-off Jobs: the `run` submodule
+
+The `heroku run` / release-phase equivalent: a `kubernetes_job_v1` that runs a
+one-shot command (DB migrations, seed loading, arbitrary tasks) in the same
+environment as a deployed process. Instead of re-declaring that environment,
+the Job reads the live Deployment's pod template and inherits its `envFrom`
+(which is how it picks up the content-hash-suffixed Secret/ConfigMap names —
+addon connection vars included), `imagePullSecrets` and `serviceAccountName`.
+
+Two things stay deliberately explicit:
+
+- **`image`** — pin the run to the artifact being released, never to whatever
+  stale tag the Deployment currently points at.
+- **`command`** — what to run.
+
+The Job defaults to one-shot semantics: `backoff_limit = 0` (migrations are
+rarely safe to blindly re-run), `restart_policy = Never`,
+`ttl_seconds_after_finished = 600`, and `wait_for_completion = true` so
+`terraform apply` blocks until the run finishes and fails when it does — the
+natural gate for release pipelines.
+
+Because a failed run aborts immediately, gate on backing-service readiness with
+the optional `init_command`, an init container sharing the Job's image and env:
+
+```hcl
+module "migrate" {
+  source  = "fabn/formation/kubernetes//modules/run"
+  version = "~> 0.2"
+
+  namespace  = module.app.namespace
+  deployment = module.app.web_deployment_name
+  image      = "ghcr.io/acme/myapp:1.2.3" # the artifact being released
+
+  command      = ["/bin/bash", "-lc", "bin/rails db:migrate"]
+  init_command = ["/bin/bash", "-lc", "until pg_isready -t 5; do echo 'waiting for postgres'; sleep 2; done"]
+
+  # Only needed when the formation is applied from the same root: defers the
+  # Deployment read to apply time so the first apply works too.
+  depends_on = [module.app]
+}
+```
+
+Typically the module lives in its own tiny root that a pipeline applies after
+(or alongside) the release. Each apply that plans the Job creates a fresh
+`<deployment>-run-<random>` Job (`generate_name`); after the TTL the finished
+Job is garbage-collected, so a later refresh will plan a new run.
+
+Inputs: `namespace`, `deployment`, `image`, `command` (required);
+`init_command`, `name` (component label + name infix, default `run`), `env`
+(extra vars on top of the inherited envFrom), `backoff_limit`,
+`ttl_seconds_after_finished`, `wait_for_completion`, `timeout` (apply-side,
+default `10m`), `active_deadline_seconds` (cluster-side, default unbounded).
+Outputs: `job_name`.
 
 ## Examples
 

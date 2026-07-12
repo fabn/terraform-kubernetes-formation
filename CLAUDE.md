@@ -20,6 +20,10 @@ a uniform contract — outputs `env` (plaintext config) and `sensitive_env`
 (credentials) merged into the stack by the caller, Heroku-addon style. New
 services are new addon modules, never new toggles in the core.
 
+One-off tasks (`heroku run` / release-phase equivalent) are the `run`
+submodule: a Job that inherits envFrom / pull secrets / service account from a
+live Deployment while the image and command stay explicit inputs.
+
 ## Contribution Conventions
 
 - **English everywhere** — code, comments, commit messages, issues, PRs.
@@ -80,10 +84,11 @@ lefthook run validate-all
 ├── outputs.tf           # Output values
 ├── versions.tf          # Provider requirements
 │
-├── modules/             # Addon submodules (uniform env/sensitive_env contract)
+├── modules/             # Submodules
 │   ├── postgres/        # Bitnami PostgreSQL chart + generated password
 │   ├── redis/           # Bitnami Redis chart, no auth, AOF + noeviction
-│   └── memcached/       # memcached on fabn/workload/kubernetes, ephemeral
+│   ├── memcached/       # memcached on fabn/workload/kubernetes, ephemeral
+│   └── run/             # One-off Job (heroku run / release phase equivalent)
 │
 ├── examples/            # Usage examples
 │   ├── minimal/
