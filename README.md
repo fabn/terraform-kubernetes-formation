@@ -131,7 +131,7 @@ they outgrow incubation here.
 | Name | Version |
 |------|---------|
 | terraform | >= 1.9 |
-| kubernetes | ~> 2.25 |
+| kubernetes | ~> 3.0 |
 | random | ~> 3.6 |
 | helm (addons only) | ~> 3.0 |
 
