@@ -1,0 +1,43 @@
+# Pull from the bitnamilegacy/ registry. Bitnami chart >=15.x rejects
+# unrecognised image registries unless allowInsecureImages is on.
+# Issue: bitnami/charts#30850.
+global:
+  security:
+    allowInsecureImages: true
+
+image:
+  repository: bitnamilegacy/redis
+sysctl:
+  image:
+    repository: bitnamilegacy/os-shell
+volumePermissions:
+  image:
+    repository: bitnamilegacy/os-shell
+
+architecture: standalone
+auth:
+  enabled: false
+
+# AOF persistence + noeviction on maxmemory: Flipper, Sidekiq queues and
+# session keys must not silently disappear under memory pressure — better to
+# surface OOM errors loudly so we resize before losing data.
+commonConfiguration: |-
+  appendonly yes
+  save ""
+  maxmemory ${maxMemory}
+  maxmemory-policy noeviction
+
+master:
+  persistence:
+    enabled: ${persistenceEnabled}
+    size: ${persistenceSize}
+  resources:
+    requests:
+      cpu: ${cpuRequests}
+      memory: ${memoryRequests}
+    limits:
+      memory: ${memoryLimits}
+  persistentVolumeClaimRetentionPolicy:
+    enabled: ${deletePvcOnDelete}
+    whenDeleted: Delete
+    whenScaled: Delete

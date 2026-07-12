@@ -1,0 +1,50 @@
+global:
+  security:
+    # Bitnami chart >=15.x rejects unrecognised images (the legacy registry,
+    # in our case) unless this is set. Issue: bitnami/charts#30850.
+    allowInsecureImages: true
+
+architecture: standalone
+
+image:
+  repository: bitnamilegacy/postgresql
+
+primary:
+  persistence:
+    size: ${storageSize}
+  startupProbe:
+    enabled: true
+  resources:
+    requests:
+      cpu: ${cpuRequests}
+      memory: ${memoryRequests}
+    limits:
+      memory: ${memoryLimits}
+  # Persist a .kopiaignore at the root of the postgres data PVC so
+  # Kopia-based filesystem backups (e.g. Velero's node agent) skip live
+  # PGDATA — raw PGDATA files are not a consistent recovery artifact; take
+  # logical dumps (pg_dump) via a backup pre-hook instead. The file must
+  # live on the PVC itself: the node agent reads the volume from the host
+  # mount, not through this pod's namespace, so a configMap-mounted file
+  # would be invisible to it. Harmless when no filesystem backup runs.
+  initContainers:
+    - name: write-kopiaignore
+      image: docker.io/bitnamilegacy/postgresql:17.4.0-debian-12-r19
+      imagePullPolicy: IfNotPresent
+      command:
+        - /bin/sh
+        - -c
+        - |
+          printf 'data/\nlost+found/\n' > /bitnami/postgresql/.kopiaignore
+      securityContext:
+        runAsUser: 1001
+        runAsNonRoot: true
+        readOnlyRootFilesystem: true
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: [ALL]
+        seccompProfile:
+          type: RuntimeDefault
+      volumeMounts:
+        - name: data
+          mountPath: /bitnami/postgresql
