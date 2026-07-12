@@ -255,8 +255,7 @@ the optional `init_command`, an init container sharing the Job's image and env:
 
 ```hcl
 module "migrate" {
-  source  = "fabn/formation/kubernetes//modules/run"
-  version = "~> 0.2"
+  source = "fabn/formation/kubernetes//modules/run"
 
   namespace  = module.app.namespace
   deployment = module.app.web_deployment_name
