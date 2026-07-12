@@ -77,3 +77,22 @@ module "app" {
   datadog_env     = "review"
   datadog_team    = "platform"
 }
+
+# One-off release task (Heroku release phase): prepare the database with the
+# exact artifact being released, inheriting the runtime env (envFrom, pull
+# secrets, service account) from the web Deployment. The init container gates
+# on postgres readiness because backoff_limit = 0 aborts on the first failure.
+module "migrate" {
+  source = "../../modules/run"
+
+  namespace  = module.app.namespace
+  deployment = module.app.web_deployment_name
+  image      = "ghcr.io/acme/myapp:pr-42"
+
+  command      = ["/bin/bash", "-lc", "bin/rails db:prepare"]
+  init_command = ["/bin/bash", "-lc", "until pg_isready -t 5; do echo 'waiting for postgres'; sleep 2; done"]
+
+  # Same-root composition: defer the Deployment read to apply time so the
+  # first apply works too.
+  depends_on = [module.app]
+}
