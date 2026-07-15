@@ -5,7 +5,7 @@
 # in-process metrics exporter reached on the pod IP by autodiscovery checks).
 module "process" {
   source  = "fabn/workload/kubernetes"
-  version = "~> 0.5"
+  version = "~> 0.6"
 
   for_each = var.formation
 
@@ -34,6 +34,7 @@ module "process" {
   ingress_hostnames   = each.value.web ? [var.domain] : []
   ingress_class_name  = var.ingress_class_name
   ingress_annotations = each.value.web ? var.ingress_annotations : {}
+  alb                 = each.value.web ? var.alb : null
 
   datadog_enabled  = var.datadog_enabled
   datadog_ust_tags = local.datadog_ust_tags

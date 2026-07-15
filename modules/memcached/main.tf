@@ -5,7 +5,7 @@
 
 module "memcached" {
   source  = "fabn/workload/kubernetes"
-  version = "~> 0.5"
+  version = "~> 0.6"
 
   name      = var.name
   namespace = var.namespace
