@@ -108,6 +108,17 @@ variable "ingress_annotations" {
   default     = {}
 }
 
+variable "alb" {
+  description = "Configure the web process Ingress for an AWS ALB (EKS Auto Mode or AWS Load Balancer Controller), passed through to fabn/workload/kubernetes: TLS terminates on the ALB, so in-cluster TLS and the ACME annotation are suppressed. Set to {} to accept all defaults; on shared (group) ALBs set load_balancer_name, which must carry the same value on every Ingress of the group. Combine with ingress_class_name = null when the ALB class is the cluster default."
+  type = object({
+    load_balancer_name = optional(string)
+    healthcheck_path   = optional(string, "/")
+    listen_ports       = optional(list(map(number)), [{ HTTPS = 443 }])
+  })
+  default  = null
+  nullable = true
+}
+
 variable "namespace_labels" {
   description = "Extra labels merged onto the namespace."
   type        = map(string)

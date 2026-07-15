@@ -133,6 +133,38 @@ run "worker_only_formation" {
   }
 }
 
+# Test: ALB mode — annotations on the web ingress, in-cluster TLS/ACME suppressed
+run "alb_ingress" {
+  command = plan
+
+  variables {
+    ingress_class_name = null
+    alb = {
+      load_balancer_name = "shared-external"
+    }
+  }
+
+  assert {
+    condition     = module.process["web"].ingress.metadata[0].annotations["alb.ingress.kubernetes.io/load-balancer-name"] == "shared-external"
+    error_message = "Web ingress should carry the ALB load-balancer-name annotation"
+  }
+
+  assert {
+    condition     = module.process["web"].ingress.metadata[0].annotations["alb.ingress.kubernetes.io/listen-ports"] == jsonencode([{ HTTPS = 443 }])
+    error_message = "Web ingress should default to the HTTPS 443 listener"
+  }
+
+  assert {
+    condition     = !contains(keys(module.process["web"].ingress.metadata[0].annotations), "kubernetes.io/tls-acme")
+    error_message = "ALB mode should suppress the ACME annotation (TLS terminates on the ALB)"
+  }
+
+  assert {
+    condition     = length(module.process["web"].ingress.spec[0].tls) == 0
+    error_message = "ALB mode should suppress the in-cluster TLS block"
+  }
+}
+
 # Test: a web process requires a domain
 run "validation_web_requires_domain" {
   command = plan

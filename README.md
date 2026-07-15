@@ -130,6 +130,25 @@ never new toggles in the core; cloud-vendor addons (e.g. a DigitalOcean
 managed database) belong in their own `terraform-<provider>-*` repository once
 they outgrow incubation here.
 
+### Behind an AWS ALB (EKS Auto Mode / AWS Load Balancer Controller)
+
+Set `alb` to configure the web Ingress for ALB termination — TLS ends on the
+load balancer (ACM certificate), so the in-cluster TLS block and the ACME
+annotation are suppressed:
+
+```hcl
+module "app" {
+  source = "fabn/formation/kubernetes"
+
+  # ...
+  domain             = "myapp.example.com" # must be covered by the ALB's ACM cert
+  ingress_class_name = null                # the ALB class is usually the cluster default
+  alb = {
+    load_balancer_name = "shared-external" # same value on every Ingress of a group ALB
+  }
+}
+```
+
 ## Requirements
 
 | Name | Version |
@@ -179,8 +198,9 @@ they outgrow incubation here.
 | `env` | Plaintext env vars for every process (ConfigMap) | `map(string)` | `{}` |
 | `secret_env` | Sensitive env vars for every process (Secret) | `map(string)` | `{}` |
 | `registry_server` | Container registry host | `string` | `"ghcr.io"` |
-| `ingress_class_name` | IngressClass for the web ingress | `string` | `"nginx"` |
+| `ingress_class_name` | IngressClass for the web ingress (set to `null` to use the cluster default class) | `string` | `"nginx"` |
 | `ingress_annotations` | Extra annotations on the web ingress | `map(string)` | `{}` |
+| `alb` | ALB termination for the web ingress: `{ load_balancer_name, healthcheck_path, listen_ports }` (see above) | `object` | `null` |
 | `namespace_labels` | Extra labels merged onto the namespace | `map(string)` | `{}` |
 | `datadog_enabled` | Datadog UST tags + log annotations on every process | `bool` | `false` |
 | `datadog_service` | Datadog service tag (defaults to `name`) | `string` | `null` |
