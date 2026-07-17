@@ -133,6 +133,42 @@ run "worker_only_formation" {
   }
 }
 
+# Test: autoscaled processes hand the replica count to an external autoscaler
+run "autoscaled_process_null_replicas" {
+  command = plan
+
+  variables {
+    formation = {
+      web = {
+        web                = true
+        ports              = { http = 3000 }
+        startup_probe_path = "/healthz"
+      }
+      worker = {
+        args       = ["bundle", "exec", "sidekiq"]
+        autoscaled = true
+        # Ignored: the autoscaler owns the count.
+        replicas = 3
+      }
+    }
+  }
+
+  # The worker was applied earlier in this file with a managed count of 1.
+  # With autoscaled = true the config sends a null count, and the provider
+  # keeps the live value for the computed field — the ignored `replicas = 3`
+  # must never reach the manifest, and the existing count must survive the
+  # plan untouched (the no-drift contract with an external autoscaler).
+  assert {
+    condition     = module.process["worker"].deployment.spec[0].replicas == "1"
+    error_message = "Autoscaled processes must leave the live replica count untouched (config sends null, ignoring `replicas`)"
+  }
+
+  assert {
+    condition     = module.process["web"].deployment.spec[0].replicas == "1"
+    error_message = "Non-autoscaled processes should keep the managed replica count"
+  }
+}
+
 # Test: ALB mode — annotations on the web ingress, in-cluster TLS/ACME suppressed
 run "alb_ingress" {
   command = plan
