@@ -179,7 +179,8 @@ module "app" {
 | `web` | Marks the (at most one) HTTP process behind the ingress | `bool` | `false` |
 | `command` | Container command override | `list(string)` | `null` |
 | `args` | Container args | `list(string)` | `null` |
-| `replicas` | Replica count | `number` | `1` |
+| `replicas` | Replica count (ignored when `autoscaled`) | `number` | `1` |
+| `autoscaled` | Hands the replica count to an external autoscaler (HPA, KEDA): deploys with `replicas = null` so Terraform never manages or reverts the live count | `bool` | `false` |
 | `ports` | Container ports (name => port) | `map(number)` | `{}` |
 | `startup_probe_path` | HTTP startup probe path | `string` | `null` |
 | `http_probe_path` | HTTP liveness/readiness probe path | `string` | `null` |

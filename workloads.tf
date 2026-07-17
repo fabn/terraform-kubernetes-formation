@@ -12,7 +12,9 @@ module "process" {
   name      = each.value.web ? var.name : "${var.name}-${each.key}"
   namespace = local.ns
   image     = var.image
-  replicas  = each.value.replicas
+  # Autoscaled processes forward a null count so the field is omitted from
+  # the manifest and the external autoscaler (HPA, KEDA) keeps ownership.
+  replicas = each.value.autoscaled ? null : each.value.replicas
 
   command = each.value.command
   args    = each.value.args

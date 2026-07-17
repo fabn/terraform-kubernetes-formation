@@ -43,12 +43,20 @@ variable "domain" {
 # process runs headless (no Service) and is restarted by the kubelet on
 # process exit. Worker-only stacks (queue consumers, schedulers) simply omit
 # the web entry.
+#
+# `autoscaled = true` hands the replica count over to an external autoscaler
+# (HPA, KEDA): the process is deployed with `replicas = null` so Terraform
+# never manages — or reverts on the next apply — the live count. `replicas`
+# is ignored for such processes. An explicit flag rather than a nullable
+# `replicas`: an object-type attribute with a default would silently turn an
+# explicit null back into the default.
 variable "formation" {
   description = "Map of process name => process spec. The web process serves HTTP behind the ingress; non-web processes (worker, metrics, ...) run without a Service."
   type = map(object({
     command            = optional(list(string), [])
     args               = optional(list(string), [])
     replicas           = optional(number, 1)
+    autoscaled         = optional(bool, false)
     cpu_requests       = optional(string, "50m")
     memory_requests    = optional(string, "128Mi")
     memory_limits      = optional(string, "512Mi")
