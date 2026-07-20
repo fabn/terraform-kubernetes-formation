@@ -29,7 +29,8 @@ the building block it composes.
 - **Addons**: independent backing-service submodules (`postgres`, `redis`,
   `memcached`) with a uniform contract — outputs `env` (plaintext config) and
   `sensitive_env` (credentials) the caller merges into the stack, Heroku-addon
-  style
+  style — or the `addons` wrapper that sizes them behind one Heroku-like map
+  (the in-cluster twin of the managed [`fabn/addons/aws`](https://registry.terraform.io/modules/fabn/addons/aws))
 - **One-off Jobs**: the `run` submodule is the `heroku run` / release-phase
   equivalent — a Job that inherits the runtime environment of a deployed
   process (envFrom, pull secrets, service account) to run a one-shot command
@@ -125,10 +126,53 @@ module "app" {
 }
 ```
 
-New backing services (mysql, managed databases, …) are new addon modules,
-never new toggles in the core; cloud-vendor addons (e.g. a DigitalOcean
-managed database) belong in their own `terraform-<provider>-*` repository once
-they outgrow incubation here.
+New backing services are new addon modules, never new toggles in the core;
+managed cloud addons (Aurora, ElastiCache, …) live in the companion
+[`fabn/addons/aws`](https://registry.terraform.io/modules/fabn/addons/aws),
+which exposes the same `env` / `sensitive_env` contract so a stack swaps
+in-cluster for managed without touching the app.
+
+### Addons behind one map (`modules/addons`)
+
+The `addons` submodule wraps the backing-service submodules behind a single
+Heroku-like map — one entry per service, sized with a preset plan — and
+re-exports the merged `env` / `sensitive_env`. It is the in-cluster twin of
+`fabn/addons/aws`: the same map shape and the same env contract, so a stack
+picks its backend by pointing at one module or the other (network inputs
+aside).
+
+```hcl
+module "addons" {
+  source  = "fabn/formation/kubernetes//modules/addons"
+  version = "~> 0.2"
+
+  namespace = kubernetes_namespace_v1.app.metadata[0].name
+  name      = "myapp-staging"
+
+  addons = {
+    postgres  = { size = "small" } # database/user default to the stack name
+    redis     = { size = "mini" }
+    memcached = { size = "mini" }
+  }
+}
+
+module "app" {
+  source  = "fabn/formation/kubernetes"
+  version = "~> 0.2"
+
+  # ...
+  create_namespace = false
+  namespace        = kubernetes_namespace_v1.app.metadata[0].name
+
+  env        = merge(module.addons.env, { RAILS_ENV = "production" })
+  secret_env = module.addons.sensitive_env
+}
+```
+
+`size` picks a preset (`mini` | `small` | `medium` | `large`, default `mini`);
+any explicit knob (`storage_size`, `max_memory`, `cpu_requests`, …) overrides
+the preset for that field. For knobs the wrapper does not surface, use the
+individual submodules directly (they stay usable on their own).
 
 ### Behind an AWS ALB (EKS Auto Mode / AWS Load Balancer Controller)
 
@@ -222,7 +266,9 @@ module "app" {
 ## Addon submodules
 
 Uniform contract: inputs `namespace`/`name` (+ service specifics), outputs
-`env` (plaintext) and `sensitive_env` (credentials).
+`env` (plaintext) and `sensitive_env` (credentials). Compose them behind one
+map with the [`addons` wrapper](#addons-behind-one-map-modulesaddons), or use
+them individually.
 
 ### postgres
 
@@ -246,8 +292,8 @@ pressure.
 
 Plain memcached on `fabn/workload/kubernetes`, deliberately ephemeral (no PVC).
 
-- `env`: `MEMCACHIER_SERVERS` (Heroku-addon legacy var name, kept for config
-  parity across deploy targets)
+- `env`: `MEMCACHED_SERVER_URL` (a `memcached://host:port` URL, matching the
+  `fabn/addons/aws` memcached addon)
 - `sensitive_env`: empty
 
 ## One-off Jobs: the `run` submodule
