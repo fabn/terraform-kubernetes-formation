@@ -68,6 +68,9 @@ resource "kubernetes_manifest" "cluster" {
         # No superuser Secret: the app connects as the initdb owner only.
         enableSuperuserAccess = false
 
+        # Operator-managed PodDisruptionBudgets (separate primary/replica).
+        enablePDB = var.enable_pdb
+
         affinity = merge(
           {
             enablePodAntiAffinity = var.enable_pod_anti_affinity

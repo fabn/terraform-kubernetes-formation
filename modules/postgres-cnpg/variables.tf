@@ -86,6 +86,14 @@ variable "memory_limits" {
   default     = "512Mi"
 }
 
+# --- high availability -------------------------------------------------------
+
+variable "enable_pdb" {
+  description = "Let the operator manage PodDisruptionBudgets (one for the primary, one for the replicas) so a node drain never takes the primary and always leaves a replica. CloudNativePG defaults this on; expose it so single-instance/dev stacks can disable the blocking PDB."
+  type        = bool
+  default     = true
+}
+
 # --- scheduling --------------------------------------------------------------
 
 variable "enable_pod_anti_affinity" {

@@ -50,6 +50,17 @@ run "cnpg_env_contract" {
     condition     = output.host == "pg-rw"
     error_message = "host output should be the -rw Service"
   }
+
+  # HA surface: operator-managed PDB on, pod anti-affinity on by default.
+  assert {
+    condition     = kubernetes_manifest.cluster.manifest.spec.enablePDB == true
+    error_message = "PDBs should be operator-managed by default"
+  }
+
+  assert {
+    condition     = kubernetes_manifest.cluster.manifest.spec.affinity.enablePodAntiAffinity == true
+    error_message = "pod anti-affinity should be enabled by default"
+  }
 }
 
 # Custom name drives every derived Service / resource name.
