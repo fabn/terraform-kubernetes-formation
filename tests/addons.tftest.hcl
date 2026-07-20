@@ -224,6 +224,31 @@ run "wrapper_explicit_knob_overrides_preset" {
   }
 }
 
+# An addon with no size (only raw knobs) must validate and fall back to the
+# mini preset — the size validation must not choke on a null size.
+run "wrapper_accepts_sizeless_addon" {
+  command = apply
+
+  module {
+    source = "./modules/addons"
+  }
+
+  variables {
+    namespace = "addon-test"
+    name      = "myapp-staging"
+    addons = {
+      postgres  = { storage_size = "10Gi" }
+      redis     = { max_memory = 512 }
+      memcached = { memory_requests = "96Mi" }
+    }
+  }
+
+  assert {
+    condition     = output.env.PGHOST == "myapp-staging-postgres-postgresql" && can(output.env.REDIS_URL) && can(output.env.MEMCACHED_SERVERS)
+    error_message = "size-less addons should validate and produce the full env contract"
+  }
+}
+
 # Unsupported addon keys are rejected
 run "wrapper_rejects_unknown_addon" {
   command = plan

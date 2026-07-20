@@ -60,7 +60,11 @@ variable "addons" {
   }
 
   validation {
-    condition     = alltrue([for k, spec in var.addons : spec.size == null || contains(["mini", "small", "medium", "large"], spec.size)])
+    # coalesce over `spec.size == null || …`: some Terraform versions do not
+    # short-circuit `||` in a validation condition and evaluate contains(list,
+    # null), which errors ("argument must not be null"). A null size means the
+    # mini default, which is valid, so fold it in before the membership check.
+    condition     = alltrue([for k, spec in var.addons : contains(["mini", "small", "medium", "large"], coalesce(spec.size, "mini"))])
     error_message = "size must be one of: mini, small, medium, large."
   }
 
