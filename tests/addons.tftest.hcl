@@ -102,7 +102,7 @@ run "redis_env_contract" {
   }
 }
 
-# Memcached: standard memcached:// URL var, no credentials
+# Memcached: plain host:port server list, no credentials
 run "memcached_env_contract" {
   command = apply
 
@@ -115,8 +115,8 @@ run "memcached_env_contract" {
   }
 
   assert {
-    condition     = output.env.MEMCACHED_SERVER_URL == "memcached://memcached:11211"
-    error_message = "MEMCACHED_SERVER_URL should be a memcached:// URL targeting the Service"
+    condition     = output.env.MEMCACHED_SERVERS == "memcached:11211"
+    error_message = "MEMCACHED_SERVERS should be a host:port list targeting the Service"
   }
 
   assert {
@@ -159,7 +159,7 @@ run "wrapper_merges_enabled_addons" {
   }
 
   assert {
-    condition     = output.env.MEMCACHED_SERVER_URL == "memcached://myapp-staging-memcached:11211"
+    condition     = output.env.MEMCACHED_SERVERS == "myapp-staging-memcached:11211"
     error_message = "memcached addon should be named <name>-memcached"
   }
 
@@ -192,7 +192,7 @@ run "wrapper_omits_disabled_addons" {
   }
 
   assert {
-    condition     = !can(output.env.REDIS_URL) && !can(output.env.MEMCACHED_SERVER_URL)
+    condition     = !can(output.env.REDIS_URL) && !can(output.env.MEMCACHED_SERVERS)
     error_message = "only the postgres addon was enabled: no redis/memcached vars expected"
   }
 

@@ -1,15 +1,18 @@
 # Addon contract: `env` holds plaintext config vars, `sensitive_env` holds
 # credentials.
 #
-# MEMCACHED_SERVER_URL mirrors the AWS addons companion (fabn/addons/aws) so
-# an in-cluster / managed swap stays invisible to the app: a scheme-prefixed
-# `memcached://host:port` URL (a single node here; the AWS addon emits a
-# comma-separated list of every cache node). Plain memcached with no SASL, so
-# there are no credentials to output.
+# MEMCACHED_SERVERS is a plain host:port server list, deliberately NOT a
+# `memcached://…` URL: memcached clients (dalli et al.) parse a host:port list,
+# not a URI scheme — unlike redis:// / postgresql:// whose clients do parse the
+# scheme, so prefixing one here would only force the app to strip it. This
+# matches the MemCachier/Heroku server-list convention and the AWS addons
+# companion (fabn/addons/aws), which emits the same host:port list
+# (comma-separated across nodes) so an in-cluster / managed swap stays invisible
+# to the app. Plain memcached with no SASL, so there are no credentials.
 output "env" {
-  description = "Plaintext connection var for the application cache store: a memcached://host:port URL."
+  description = "Plaintext connection var for the application cache store: a comma-separated host:port memcached server list (a single node here)."
   value = {
-    MEMCACHED_SERVER_URL = "memcached://${module.memcached.service_name}:11211"
+    MEMCACHED_SERVERS = "${module.memcached.service_name}:11211"
   }
 }
 

@@ -103,7 +103,7 @@ run "memcached" {
   }
 
   assert {
-    condition     = output.env.MEMCACHED_SERVER_URL == "memcached://e2e-memcached:11211"
-    error_message = "MEMCACHED_SERVER_URL should be a memcached:// URL targeting the Service"
+    condition     = output.env.MEMCACHED_SERVERS == "e2e-memcached:11211"
+    error_message = "MEMCACHED_SERVERS should be a host:port list targeting the Service"
   }
 }

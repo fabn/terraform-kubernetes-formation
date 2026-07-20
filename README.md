@@ -292,7 +292,8 @@ pressure.
 
 Plain memcached on `fabn/workload/kubernetes`, deliberately ephemeral (no PVC).
 
-- `env`: `MEMCACHED_SERVER_URL` (a `memcached://host:port` URL, matching the
+- `env`: `MEMCACHED_SERVERS` (a comma-separated `host:port` server list — no
+  URI scheme, the format memcached clients consume — matching the
   `fabn/addons/aws` memcached addon)
 - `sensitive_env`: empty
 
