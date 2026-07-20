@@ -103,7 +103,7 @@ run "memcached" {
   }
 
   assert {
-    condition     = output.env.MEMCACHIER_SERVERS == "e2e-memcached:11211"
-    error_message = "MEMCACHIER_SERVERS should target the memcached Service"
+    condition     = output.env.MEMCACHED_SERVERS == "e2e-memcached:11211"
+    error_message = "MEMCACHED_SERVERS should be a host:port list targeting the Service"
   }
 }

@@ -1,11 +1,18 @@
-# Rails (config/environments/production.rb) builds its :mem_cache_store from
-# MEMCACHIER_SERVERS — the var name is a Heroku-addon legacy kept for config
-# parity across deploy targets. Plain memcached with no SASL, so the
-# MEMCACHIER_USERNAME / MEMCACHIER_PASSWORD pair stays unset.
+# Addon contract: `env` holds plaintext config vars, `sensitive_env` holds
+# credentials.
+#
+# MEMCACHED_SERVERS is a plain host:port server list, deliberately NOT a
+# `memcached://…` URL: memcached clients (dalli et al.) parse a host:port list,
+# not a URI scheme — unlike redis:// / postgresql:// whose clients do parse the
+# scheme, so prefixing one here would only force the app to strip it. This
+# matches the MemCachier/Heroku server-list convention and the AWS addons
+# companion (fabn/addons/aws), which emits the same host:port list
+# (comma-separated across nodes) so an in-cluster / managed swap stays invisible
+# to the app. Plain memcached with no SASL, so there are no credentials.
 output "env" {
-  description = "Plaintext connection vars for the Rails cache store."
+  description = "Plaintext connection var for the application cache store: a comma-separated host:port memcached server list (a single node here)."
   value = {
-    MEMCACHIER_SERVERS = "${module.memcached.service_name}:11211"
+    MEMCACHED_SERVERS = "${module.memcached.service_name}:11211"
   }
 }
 
@@ -13,4 +20,9 @@ output "sensitive_env" {
   description = "Always empty (no SASL); present to satisfy the addon contract."
   sensitive   = true
   value       = {}
+}
+
+output "host" {
+  description = "Hostname of the memcached Service."
+  value       = module.memcached.service_name
 }

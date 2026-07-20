@@ -88,6 +88,7 @@ lefthook run validate-all
 │   ├── postgres/        # Bitnami PostgreSQL chart + generated password
 │   ├── redis/           # Bitnami Redis chart, no auth, AOF + noeviction
 │   ├── memcached/       # memcached on fabn/workload/kubernetes, ephemeral
+│   ├── addons/          # Wrapper: sizes postgres/redis/memcached behind one map
 │   └── run/             # One-off Job (heroku run / release phase equivalent)
 │
 ├── examples/            # Usage examples
@@ -105,7 +106,10 @@ lefthook run validate-all
   get `service_type = null`.
 - **Addons are separate modules, not core toggles**: addons have different
   providers and lifecycles (helm must not leak into the core), and
-  per-environment addon swaps stay invisible to the core.
+  per-environment addon swaps stay invisible to the core. The `addons`
+  wrapper sizes them behind one Heroku-like map and mirrors the managed
+  companion `fabn/addons/aws` (same map shape + `env`/`sensitive_env`
+  contract), so a stack swaps in-cluster for cloud by switching module source.
 - **Bitnami legacy images**: postgres/redis values files pin
   `bitnamilegacy/*` repositories with `global.security.allowInsecureImages`
   (chart >= 15.x rejects unrecognised registries, bitnami/charts#30850).
