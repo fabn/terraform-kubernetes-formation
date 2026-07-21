@@ -175,11 +175,16 @@ variable "backup" {
     Continuous backup + PITR to an S3-compatible object store via the
     barman-cloud plugin. When set, the module creates an ObjectStore, wires it
     into the Cluster as the WAL archiver, and schedules base backups.
+
+    Credentials: set credentials_secret_name for static keys; leave it null to
+    inherit the pod's ambient IAM identity (inheritFromIAMRole) — e.g. AWS S3
+    with EKS Pod Identity or IRSA, no keys to ship. endpoint_url is only needed
+    for non-AWS S3-compatible stores; omit it for native AWS S3.
   EOT
   type = object({
-    destination_path        = string # s3://<bucket>/<path>
-    endpoint_url            = string # S3-compatible endpoint URL
-    credentials_secret_name = string # existing Secret with the S3 keys
+    destination_path        = string           # s3://<bucket>/<path>
+    endpoint_url            = optional(string) # non-AWS S3-compatible endpoint; omit for AWS S3
+    credentials_secret_name = optional(string) # null => inheritFromIAMRole (Pod Identity / IRSA)
     access_key_id_key       = optional(string, "ACCESS_KEY_ID")
     secret_access_key_key   = optional(string, "SECRET_ACCESS_KEY")
     retention_policy        = optional(string, "30d")
