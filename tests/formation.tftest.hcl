@@ -225,3 +225,44 @@ run "validation_rejects_multiple_web" {
 
   expect_failures = [var.formation]
 }
+
+# Test: the web probes get the permissive defaults, overridable per process
+run "permissive_probe_defaults" {
+  command = plan
+
+  variables {
+    formation = {
+      web = {
+        web                = true
+        ports              = { http = 3000 }
+        startup_probe_path = "/healthz"
+        http_probe_path    = "/healthz"
+      }
+      slow = {
+        web                           = false
+        ports                         = { http = 4000 }
+        startup_probe_path            = "/healthz"
+        http_probe_path               = "/healthz"
+        startup_probe_timeout_seconds = 10
+        probe_timeout_seconds         = 5
+      }
+    }
+  }
+
+  assert {
+    condition = (
+      module.process["web"].deployment.spec[0].template[0].spec[0].container[0].startup_probe[0].timeout_seconds == 5 &&
+      module.process["web"].deployment.spec[0].template[0].spec[0].container[0].startup_probe[0].failure_threshold == 30 &&
+      module.process["web"].deployment.spec[0].template[0].spec[0].container[0].liveness_probe[0].timeout_seconds == 3
+    )
+    error_message = "Web process should inherit the permissive probe defaults (startup 5s/30, probe 3s)"
+  }
+
+  assert {
+    condition = (
+      module.process["slow"].deployment.spec[0].template[0].spec[0].container[0].startup_probe[0].timeout_seconds == 10 &&
+      module.process["slow"].deployment.spec[0].template[0].spec[0].container[0].liveness_probe[0].timeout_seconds == 5
+    )
+    error_message = "Per-process overrides should win over the defaults"
+  }
+}
