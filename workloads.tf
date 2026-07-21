@@ -5,7 +5,7 @@
 # in-process metrics exporter reached on the pod IP by autodiscovery checks).
 module "process" {
   source  = "fabn/workload/kubernetes"
-  version = "~> 0.6"
+  version = "~> 0.7"
 
   for_each = var.formation
 
@@ -22,8 +22,12 @@ module "process" {
 
   service_type = each.value.web ? "ClusterIP" : null
 
-  startup_probe_path = each.value.startup_probe_path
-  http_probe_path    = each.value.http_probe_path
+  startup_probe_path              = each.value.startup_probe_path
+  http_probe_path                 = each.value.http_probe_path
+  startup_probe_timeout_seconds   = each.value.startup_probe_timeout_seconds
+  startup_probe_failure_threshold = each.value.startup_probe_failure_threshold
+  probe_timeout_seconds           = each.value.probe_timeout_seconds
+  probe_failure_threshold         = each.value.probe_failure_threshold
 
   cpu_requests    = each.value.cpu_requests
   memory_requests = each.value.memory_requests

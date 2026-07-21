@@ -64,8 +64,17 @@ variable "formation" {
     ports              = optional(map(number), {})
     startup_probe_path = optional(string)
     http_probe_path    = optional(string)
-    datadog_source     = optional(string)
-    datadog_checks     = optional(any, {})
+    # Probe tuning. Defaults are more permissive than Kubernetes' own
+    # (timeoutSeconds 1, failureThreshold 3): this module is shaped around
+    # Rails + Sidekiq, whose cold boot — eager load + a JIT compiling the
+    # first request — routinely blows a 1s probe. Startup gets a laxer budget
+    # than the steady-state liveness/readiness probe. Set a value to override.
+    startup_probe_timeout_seconds   = optional(number, 5)
+    startup_probe_failure_threshold = optional(number, 30)
+    probe_timeout_seconds           = optional(number, 3)
+    probe_failure_threshold         = optional(number)
+    datadog_source                  = optional(string)
+    datadog_checks                  = optional(any, {})
   }))
 
   validation {

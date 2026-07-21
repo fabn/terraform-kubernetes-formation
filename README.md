@@ -228,6 +228,10 @@ module "app" {
 | `ports` | Container ports (name => port) | `map(number)` | `{}` |
 | `startup_probe_path` | HTTP startup probe path | `string` | `null` |
 | `http_probe_path` | HTTP liveness/readiness probe path | `string` | `null` |
+| `startup_probe_timeout_seconds` | startupProbe timeoutSeconds — more permissive than k8s (1) for cold Rails boots | `number` | `5` |
+| `startup_probe_failure_threshold` | startupProbe failureThreshold — long startup budget for slow starts | `number` | `30` |
+| `probe_timeout_seconds` | liveness/readiness timeoutSeconds — tolerates transient spikes | `number` | `3` |
+| `probe_failure_threshold` | liveness/readiness failureThreshold (null = k8s default 3) | `number` | `null` |
 | `cpu_requests` | CPU request | `string` | `"50m"` |
 | `memory_requests` | Memory request | `string` | `"128Mi"` |
 | `memory_limits` | Memory limit | `string` | `"512Mi"` |
