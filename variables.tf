@@ -92,6 +92,33 @@ variable "formation" {
         values   = optional(list(string), [])
       })), [])
     }))
+    # Exact-match node selector and pod affinity (co-location), also passed
+    # through to fabn/workload/kubernetes. node_affinity covers set-based node
+    # placement; these round out the placement surface.
+    node_selector = optional(map(string))
+    pod_affinity = optional(object({
+      required = optional(list(object({
+        topology_key = string
+        namespaces   = optional(list(string))
+        match_labels = optional(map(string), {})
+        match_expressions = optional(list(object({
+          key      = string
+          operator = string
+          values   = optional(list(string), [])
+        })), [])
+      })), [])
+      preferred = optional(list(object({
+        weight       = number
+        topology_key = string
+        namespaces   = optional(list(string))
+        match_labels = optional(map(string), {})
+        match_expressions = optional(list(object({
+          key      = string
+          operator = string
+          values   = optional(list(string), [])
+        })), [])
+      })), [])
+    }))
   }))
 
   validation {

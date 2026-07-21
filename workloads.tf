@@ -30,6 +30,8 @@ module "process" {
   probe_failure_threshold         = each.value.probe_failure_threshold
 
   node_affinity = each.value.node_affinity
+  node_selector = each.value.node_selector
+  pod_affinity  = each.value.pod_affinity
 
   cpu_requests    = each.value.cpu_requests
   memory_requests = each.value.memory_requests
