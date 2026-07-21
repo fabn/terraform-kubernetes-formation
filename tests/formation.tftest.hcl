@@ -266,3 +266,73 @@ run "permissive_probe_defaults" {
     error_message = "Per-process overrides should win over the defaults"
   }
 }
+
+run "node_affinity_passthrough" {
+  command = plan
+
+  variables {
+    formation = {
+      web = {
+        web   = true
+        ports = { http = 3000 }
+        node_affinity = {
+          required = [
+            { key = "karpenter.sh/capacity-type", operator = "In", values = ["spot"] },
+            { key = "eks.amazonaws.com/instance-category", operator = "NotIn", values = ["t"] },
+          ]
+          preferred = [
+            { weight = 100, key = "kubernetes.io/arch", operator = "In", values = ["arm64"] },
+          ]
+        }
+      }
+      worker = {
+        web   = false
+        ports = { metrics = 9394 }
+      }
+    }
+  }
+
+  assert {
+    condition     = length(module.process["web"].deployment.spec[0].template[0].spec[0].affinity[0].node_affinity[0].required_during_scheduling_ignored_during_execution[0].node_selector_term[0].match_expressions) == 2
+    error_message = "Web process should forward both required node-affinity match expressions"
+  }
+
+  assert {
+    condition     = module.process["web"].deployment.spec[0].template[0].spec[0].affinity[0].node_affinity[0].preferred_during_scheduling_ignored_during_execution[0].weight == 100
+    error_message = "Web process should forward the preferred node-affinity weight"
+  }
+
+  assert {
+    condition     = length(module.process["worker"].deployment.spec[0].template[0].spec[0].affinity[0].node_affinity) == 0
+    error_message = "A process without node_affinity should not get node affinity"
+  }
+}
+
+run "node_selector_and_pod_affinity_passthrough" {
+  command = plan
+
+  variables {
+    formation = {
+      web = {
+        web           = true
+        ports         = { http = 3000 }
+        node_selector = { "disktype" = "ssd" }
+        pod_affinity = {
+          required = [
+            { topology_key = "kubernetes.io/hostname", match_labels = { app = "cache" } },
+          ]
+        }
+      }
+    }
+  }
+
+  assert {
+    condition     = module.process["web"].deployment.spec[0].template[0].spec[0].node_selector["disktype"] == "ssd"
+    error_message = "Web process should forward the node selector"
+  }
+
+  assert {
+    condition     = module.process["web"].deployment.spec[0].template[0].spec[0].affinity[0].pod_affinity[0].required_during_scheduling_ignored_during_execution[0].topology_key == "kubernetes.io/hostname"
+    error_message = "Web process should forward the pod affinity"
+  }
+}

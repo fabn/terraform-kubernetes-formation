@@ -237,6 +237,9 @@ module "app" {
 | `memory_limits` | Memory limit | `string` | `"512Mi"` |
 | `datadog_source` | Datadog log source (defaults to `rails` for web, process name otherwise) | `string` | `null` |
 | `datadog_checks` | Datadog autodiscovery checks | `any` | `{}` |
+| `node_affinity` | Node affinity: `required` match expressions (ANDed into one hard term) + `preferred` weighted match expressions. E.g. require spot & non-`t`, prefer `arm64`. | `object({ required, preferred })` | `null` |
+| `node_selector` | Exact-match node selector (label => value) | `map(string)` | `null` |
+| `pod_affinity` | Pod affinity (co-location): `required`/`preferred` terms, each a `topology_key` + label selector. | `object({ required, preferred })` | `null` |
 
 ### Optional
 
