@@ -156,6 +156,68 @@ run "cnpg_backup_disabled_by_default" {
   }
 }
 
+# Backup without a credentials Secret => keyless S3 auth (inheritFromIAMRole,
+# i.e. EKS Pod Identity / IRSA) and no explicit endpoint (native AWS S3).
+run "cnpg_backup_inherit_iam_role" {
+  command = apply
+
+  module {
+    source = "./modules/postgres-cnpg"
+  }
+
+  variables {
+    namespace = "addon-test"
+    database  = "myapp"
+    username  = "myapp"
+    backup    = { destination_path = "s3://backups/myapp" }
+  }
+
+  assert {
+    condition     = kubernetes_manifest.object_store[0].manifest.spec.configuration.s3Credentials.inheritFromIAMRole == true
+    error_message = "no credentials_secret_name should yield inheritFromIAMRole"
+  }
+
+  assert {
+    condition     = !can(kubernetes_manifest.object_store[0].manifest.spec.configuration.endpointURL)
+    error_message = "native AWS S3 (no endpoint_url) should omit endpointURL"
+  }
+
+  assert {
+    condition     = length(kubernetes_manifest.scheduled_backup) == 1
+    error_message = "a ScheduledBackup should be created when backup is set"
+  }
+}
+
+# Backup with a credentials Secret => static keys + explicit endpoint.
+run "cnpg_backup_static_keys" {
+  command = apply
+
+  module {
+    source = "./modules/postgres-cnpg"
+  }
+
+  variables {
+    namespace = "addon-test"
+    database  = "myapp"
+    username  = "myapp"
+    backup = {
+      destination_path        = "s3://backups/myapp"
+      endpoint_url            = "https://s3.example.com"
+      credentials_secret_name = "s3-creds"
+    }
+  }
+
+  assert {
+    condition     = kubernetes_manifest.object_store[0].manifest.spec.configuration.s3Credentials.accessKeyId.name == "s3-creds"
+    error_message = "credentials_secret_name should drive static-key s3Credentials"
+  }
+
+  assert {
+    condition     = kubernetes_manifest.object_store[0].manifest.spec.configuration.endpointURL == "https://s3.example.com"
+    error_message = "endpoint_url should set endpointURL"
+  }
+}
+
 # Arbitrary labels/annotations propagate to operator-managed objects via
 # spec.inheritedMetadata, and labels also land on the Cluster itself.
 run "cnpg_inherited_metadata" {

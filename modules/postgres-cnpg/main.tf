@@ -149,22 +149,26 @@ resource "kubernetes_manifest" "object_store" {
     }
     spec = {
       retentionPolicy = var.backup.retention_policy
-      configuration = {
-        destinationPath = var.backup.destination_path
-        endpointURL     = var.backup.endpoint_url
-        s3Credentials = {
-          accessKeyId = {
-            name = var.backup.credentials_secret_name
-            key  = var.backup.access_key_id_key
-          }
-          secretAccessKey = {
-            name = var.backup.credentials_secret_name
-            key  = var.backup.secret_access_key_key
-          }
-        }
-        wal  = { compression = var.backup.compression }
-        data = { compression = var.backup.compression }
-      }
+      configuration = merge(
+        {
+          destinationPath = var.backup.destination_path
+          # Static keys when a Secret is given; otherwise inherit the pod's
+          # ambient IAM identity (EKS Pod Identity / IRSA) — no keys to ship.
+          # merge() of two conditional maps: a single ternary can't return the
+          # two differently-shaped credential objects.
+          s3Credentials = merge(
+            var.backup.credentials_secret_name != null ? {
+              accessKeyId     = { name = var.backup.credentials_secret_name, key = var.backup.access_key_id_key }
+              secretAccessKey = { name = var.backup.credentials_secret_name, key = var.backup.secret_access_key_key }
+            } : {},
+            var.backup.credentials_secret_name == null ? { inheritFromIAMRole = true } : {},
+          )
+          wal  = { compression = var.backup.compression }
+          data = { compression = var.backup.compression }
+        },
+        # Only non-AWS S3-compatible stores need an explicit endpoint.
+        var.backup.endpoint_url != null ? { endpointURL = var.backup.endpoint_url } : {},
+      )
     }
   }
 }
