@@ -75,6 +75,23 @@ variable "formation" {
     probe_failure_threshold         = optional(number)
     datadog_source                  = optional(string)
     datadog_checks                  = optional(any, {})
+    # Optional node affinity for this process: `required` match expressions are
+    # ANDed into one hard node-selector term, `preferred` are soft/weighted.
+    # E.g. require capacity-type In [spot] + instance-category NotIn [t], prefer
+    # arch In [arm64]. Passed through to fabn/workload/kubernetes.
+    node_affinity = optional(object({
+      required = optional(list(object({
+        key      = string
+        operator = string
+        values   = optional(list(string), [])
+      })), [])
+      preferred = optional(list(object({
+        weight   = number
+        key      = string
+        operator = string
+        values   = optional(list(string), [])
+      })), [])
+    }))
   }))
 
   validation {

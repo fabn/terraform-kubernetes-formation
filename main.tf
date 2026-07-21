@@ -37,7 +37,7 @@ resource "random_id" "secret_key_base" {
 # callers can still override it via var.secret_env (merged last).
 module "secrets" {
   source  = "fabn/workload/kubernetes//modules/secret"
-  version = "~> 0.7"
+  version = "~> 0.8"
 
   namespace   = local.ns
   name_prefix = "${var.name}-secrets"
@@ -50,7 +50,7 @@ module "secrets" {
 
 module "config" {
   source  = "fabn/workload/kubernetes//modules/config-map"
-  version = "~> 0.7"
+  version = "~> 0.8"
 
   namespace   = local.ns
   name_prefix = "${var.name}-config"
@@ -60,7 +60,7 @@ module "config" {
 
 module "registry_credentials" {
   source  = "fabn/workload/kubernetes//modules/secret"
-  version = "~> 0.7"
+  version = "~> 0.8"
 
   namespace   = local.ns
   name_prefix = "${var.name}-registry-pull"
