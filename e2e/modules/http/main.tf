@@ -78,12 +78,6 @@ data "http" "request" {
   }
 }
 
-output "http" {
-  description = "The full object"
-  value       = data.http.request
-  sensitive   = true
-}
-
 output "status_code" {
   description = "HTTP status code"
   value       = tonumber(data.http.request.status_code)
