@@ -25,6 +25,18 @@ variable "part_of" {
   default     = null
 }
 
+variable "labels" {
+  description = "Extra labels set on the Cluster/Secret and propagated by the operator (spec.inheritedMetadata) onto every object it creates — Pods, Services, PVCs, the PDB, etc."
+  type        = map(string)
+  default     = {}
+}
+
+variable "annotations" {
+  description = "Annotations propagated by the operator (spec.inheritedMetadata) onto every object it creates."
+  type        = map(string)
+  default     = {}
+}
+
 variable "instances" {
   description = "Number of PostgreSQL instances (1 = single primary, >=2 = primary + replicas). Anti-affinity `required` needs at least as many nodes as instances, or replicas stay Pending."
   type        = number

@@ -13,6 +13,15 @@ locals {
   labels = merge(
     { "app.kubernetes.io/managed-by" = "terraform" },
     var.part_of != null ? { "app.kubernetes.io/part-of" = var.part_of } : {},
+    var.labels,
+  )
+
+  # Labels CloudNativePG propagates (spec.inheritedMetadata) onto the objects
+  # it creates — Pods, Services, PVCs, the PDB, etc. managed-by is left off on
+  # purpose: those objects are managed by the operator, not Terraform directly.
+  inherited_labels = merge(
+    var.part_of != null ? { "app.kubernetes.io/part-of" = var.part_of } : {},
+    var.labels,
   )
 
   barman_object_name = "${var.name}-backup"
@@ -91,6 +100,12 @@ resource "kubernetes_manifest" "cluster" {
       },
       var.image_name != null ? { imageName = var.image_name } : {},
       var.priority_class_name != null ? { priorityClassName = var.priority_class_name } : {},
+      length(local.inherited_labels) > 0 || length(var.annotations) > 0 ? {
+        inheritedMetadata = merge(
+          length(local.inherited_labels) > 0 ? { labels = local.inherited_labels } : {},
+          length(var.annotations) > 0 ? { annotations = var.annotations } : {},
+        )
+      } : {},
       var.backup != null ? {
         plugins = [{
           name          = local.plugin_name

@@ -156,6 +156,45 @@ run "cnpg_backup_disabled_by_default" {
   }
 }
 
+# Arbitrary labels/annotations propagate to operator-managed objects via
+# spec.inheritedMetadata, and labels also land on the Cluster itself.
+run "cnpg_inherited_metadata" {
+  command = apply
+
+  module {
+    source = "./modules/postgres-cnpg"
+  }
+
+  variables {
+    namespace   = "addon-test"
+    database    = "myapp"
+    username    = "myapp"
+    part_of     = "myapp"
+    labels      = { team = "payments" }
+    annotations = { "example.com/owner" = "db-squad" }
+  }
+
+  assert {
+    condition     = kubernetes_manifest.cluster.manifest.spec.inheritedMetadata.labels.team == "payments"
+    error_message = "custom labels should propagate to managed objects via inheritedMetadata"
+  }
+
+  assert {
+    condition     = kubernetes_manifest.cluster.manifest.spec.inheritedMetadata.labels["app.kubernetes.io/part-of"] == "myapp"
+    error_message = "part-of should be among the inherited labels"
+  }
+
+  assert {
+    condition     = kubernetes_manifest.cluster.manifest.spec.inheritedMetadata.annotations["example.com/owner"] == "db-squad"
+    error_message = "custom annotations should propagate via inheritedMetadata"
+  }
+
+  assert {
+    condition     = kubernetes_manifest.cluster.manifest.metadata.labels.team == "payments"
+    error_message = "custom labels should also land on the Cluster resource"
+  }
+}
+
 # Invalid anti-affinity type is rejected.
 run "cnpg_rejects_bad_anti_affinity" {
   command = plan
