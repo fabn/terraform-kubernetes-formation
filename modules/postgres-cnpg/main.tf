@@ -101,6 +101,21 @@ resource "kubernetes_manifest" "cluster" {
     )
   }
 
+  # Optionally block until the operator reports the Cluster healthy, so the
+  # apply does not return before the database is usable.
+  dynamic "wait" {
+    for_each = var.wait_for_ready ? [1] : []
+    content {
+      fields = {
+        "status.phase" = "Cluster in healthy state"
+      }
+    }
+  }
+
+  timeouts {
+    create = var.ready_timeout
+  }
+
   depends_on = [kubernetes_secret_v1.app_cred]
 }
 

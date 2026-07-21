@@ -42,6 +42,18 @@ variable "image_name" {
   default     = null
 }
 
+variable "wait_for_ready" {
+  description = "Block the apply until the operator reports the Cluster healthy (Postgres up, database initialised). Off by default: most composition roots let the operator reconcile asynchronously and gate on their own bootstrap probe. Turn on when the apply must not return before the database is usable."
+  type        = bool
+  default     = false
+}
+
+variable "ready_timeout" {
+  description = "How long to wait for the healthy phase when wait_for_ready is set."
+  type        = string
+  default     = "10m"
+}
+
 # --- storage -----------------------------------------------------------------
 
 variable "storage_size" {
