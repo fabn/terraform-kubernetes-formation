@@ -100,11 +100,14 @@ resource "kubernetes_manifest" "cluster" {
       },
       var.image_name != null ? { imageName = var.image_name } : {},
       var.priority_class_name != null ? { priorityClassName = var.priority_class_name } : {},
+      # Both keys must be present (null when empty): kubernetes_manifest types
+      # inheritedMetadata as object({labels, annotations}) from the CRD schema,
+      # so a partial object like {labels = ...} fails to transform.
       length(local.inherited_labels) > 0 || length(var.annotations) > 0 ? {
-        inheritedMetadata = merge(
-          length(local.inherited_labels) > 0 ? { labels = local.inherited_labels } : {},
-          length(var.annotations) > 0 ? { annotations = var.annotations } : {},
-        )
+        inheritedMetadata = {
+          labels      = length(local.inherited_labels) > 0 ? local.inherited_labels : null
+          annotations = length(var.annotations) > 0 ? var.annotations : null
+        }
       } : {},
       var.backup != null ? {
         plugins = [{

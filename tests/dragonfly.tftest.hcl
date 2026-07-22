@@ -116,7 +116,8 @@ run "dragonfly_snapshot_rejects_both" {
   expect_failures = [var.snapshot]
 }
 
-# memory must cover the thread count (256Mi per thread).
+# memory must cover the thread count (320Mi per thread: maxmemory is 0.8*limit
+# and Dragonfly needs it >= 256Mi per thread).
 run "dragonfly_rejects_undersized_memory" {
   command = plan
 
@@ -131,4 +132,53 @@ run "dragonfly_rejects_undersized_memory" {
   }
 
   expect_failures = [var.memory_mib]
+}
+
+# 300Mi clears the old 256/thread floor but not the real 320/thread one (a
+# 300Mi limit gives maxmemory 240Mi < 256Mi, so Dragonfly would exit at boot).
+run "dragonfly_memory_floor_is_320_per_thread" {
+  command = plan
+
+  module {
+    source = "./modules/dragonfly"
+  }
+
+  variables {
+    namespace  = "addon-test"
+    threads    = 1
+    memory_mib = 300
+  }
+
+  expect_failures = [var.memory_mib]
+}
+
+# Reserved selector labels must never reach spec.labels: the operator hardcodes
+# app.kubernetes.io/part-of into the StatefulSet selector, so propagating it
+# there makes resource generation fail. part_of only labels this module's own
+# Secret/SA; extra custom labels still flow through to spec.labels.
+run "dragonfly_strips_reserved_labels" {
+  command = plan
+
+  module {
+    source = "./modules/dragonfly"
+  }
+
+  variables {
+    namespace = "addon-test"
+    part_of   = "myapp"
+    labels    = { team = "platform", "app.kubernetes.io/part-of" = "myapp" }
+  }
+
+  assert {
+    condition = (
+      kubernetes_manifest.dragonfly.manifest.spec.labels.team == "platform" &&
+      !contains(keys(kubernetes_manifest.dragonfly.manifest.spec.labels), "app.kubernetes.io/part-of")
+    )
+    error_message = "spec.labels should carry custom labels but strip operator-reserved selector keys (part-of)"
+  }
+
+  assert {
+    condition     = kubernetes_secret_v1.auth[0].metadata[0].labels["app.kubernetes.io/part-of"] == "myapp"
+    error_message = "part_of should still label the module's own Secret"
+  }
 }

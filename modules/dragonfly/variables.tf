@@ -10,7 +10,7 @@ variable "name" {
 }
 
 variable "part_of" {
-  description = "Value of the app.kubernetes.io/part-of label on the managed resources."
+  description = "app.kubernetes.io/part-of label value on this module's own Secret/ServiceAccount. Not propagated to the operator's objects: the operator hardcodes app.kubernetes.io/part-of=dragonfly in its StatefulSet selector, so overriding it there breaks resource generation."
   type        = string
   default     = null
 }
@@ -33,8 +33,11 @@ variable "image" {
 }
 
 # --- resources ---------------------------------------------------------------
-# Dragonfly is multi-threaded and refuses to start with less than ~256Mi per
-# io-thread, so memory and threads are coupled here and validated together.
+# Dragonfly requires maxmemory >= 256Mi per io-thread, and (when maxmemory is
+# not set explicitly) auto-sets maxmemory to 80% of the cgroup limit. So the
+# memory limit must be >= threads * 320Mi (0.8 * 320 = 256) or the process
+# exits at boot ("There are N threads, so ...MiB are required. Exiting"). Memory
+# and threads are therefore coupled here and validated together.
 
 variable "threads" {
   description = "Dragonfly io-threads (--proactor_threads). 1 keeps the memory floor predictable for a cache; raise it (with memory) for throughput."
@@ -48,13 +51,13 @@ variable "threads" {
 }
 
 variable "memory_mib" {
-  description = "Pod memory request/limit in MiB (Dragonfly sets maxmemory to ~80% of it). Must be at least 256 MiB per thread or Dragonfly will not start."
+  description = "Pod memory request/limit in MiB (Dragonfly sets maxmemory to ~80% of it). Must be at least 320 MiB per thread (0.8 * 320 = 256) or Dragonfly will not start."
   type        = number
   default     = 512
 
   validation {
-    condition     = var.memory_mib >= var.threads * 256
-    error_message = "memory_mib must be at least 256 per thread (threads * 256), or Dragonfly will not start."
+    condition     = var.memory_mib >= var.threads * 320
+    error_message = "memory_mib must be at least 320 per thread (threads * 320): Dragonfly needs maxmemory (0.8 * limit) >= 256 per thread or it exits at boot."
   }
 }
 
