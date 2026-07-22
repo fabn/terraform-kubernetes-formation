@@ -32,3 +32,15 @@ variable "memory_requests" {
   type        = string
   default     = "64Mi"
 }
+
+variable "labels" {
+  description = "Extra labels applied to the memcached resources and propagated to the pods. Use for Datadog Unified Service Tagging (tags.datadoghq.com/env, /service, /version), which the Datadog agent reads from pod labels."
+  type        = map(string)
+  default     = {}
+}
+
+variable "annotations" {
+  description = "Extra annotations propagated to the memcached pods. Use for Datadog autodiscovery of the memcached integration and log collection (ad.datadoghq.com/<container>.*)."
+  type        = map(string)
+  default     = {}
+}
