@@ -27,8 +27,9 @@ the building block it composes.
 - **Registry pull secret**: a `dockerconfigjson` Secret wired into every process
 - **Datadog**: optional UST tags + log annotations on every process
 - **Addons**: independent backing-service submodules — `postgres` (or the
-  operator-backed `postgres-cnpg`), `redis` (or the operator-backed
-  `dragonfly`), `memcached` — with a uniform contract: outputs `env`
+  operator-backed `postgres-cnpg`), `mariadb` (MySQL-family, operator-backed),
+  `redis` (or the operator-backed `dragonfly`), `memcached` — with a uniform
+  contract: outputs `env`
   (plaintext config) and
   `sensitive_env` (credentials) the caller merges into the stack, Heroku-addon
   style — or the `addons` wrapper that sizes them behind one Heroku-like map
@@ -306,6 +307,24 @@ Reference: [CloudNativePG](https://github.com/cloudnative-pg/cloudnative-pg)
 operator ([Cluster CRD](https://cloudnative-pg.io/docs/1.30/cloudnative-pg.v1)),
 [barman-cloud plugin](https://github.com/cloudnative-pg/plugin-barman-cloud).
 
+### mariadb
+
+mariadb-operator MariaDB — the MySQL-family database, same `DATABASE_URL`
+contract as the postgres addons. A single standalone server (clients use the
+`<name>` Service) or primary + replicas with operator-managed async replication
+and automatic failover (clients use `<name>-primary`, repointed on failover).
+Terraform owns the app + root passwords; optional scheduled physical backups to
+S3 (keyless via EKS Pod Identity / IRSA on `service_account_name`), and optional
+adoption of an existing database by bootstrapping from a logical dump in S3.
+Requires the mariadb-operator installed cluster-wide.
+
+- `env`: `MYSQL_HOST` (`<name>-primary` in HA, `<name>` standalone), `MYSQL_PORT`,
+  `MYSQL_USER`, `MYSQL_DATABASE`
+- `sensitive_env`: `DATABASE_URL`, `MYSQL_PWD`
+
+Reference: [mariadb-operator](https://github.com/mariadb-operator/mariadb-operator)
+([MariaDB CRD](https://github.com/mariadb-operator/mariadb-operator/blob/main/docs/api_reference.md)).
+
 ### redis
 
 Bitnami Redis chart, standalone, no auth (in-cluster only). AOF persistence +
@@ -398,6 +417,8 @@ Outputs: `job_name`.
   release-phase migration Job
 - [Postgres (operator)](examples/postgres-cnpg) — a CloudNativePG Cluster wired
   into the app through `DATABASE_URL`, with optional keyless S3 backup
+- [MariaDB (operator)](examples/mariadb) — a mariadb-operator MariaDB (HA
+  primary + replica) wired through `DATABASE_URL`, with optional keyless S3 backup
 - [Dragonfly](examples/dragonfly) — the operator-backed Redis/Valkey cache
   (HA master + replica), with optional keyless S3 snapshots
 
