@@ -127,7 +127,10 @@ lefthook run validate-all
 
 ## CI/CD
 
-- **GitHub Actions** — unit tests + E2E with Kind clusters
+- **GitHub Actions** — unit tests + E2E with Kind clusters. The E2E workflow
+  is `paths-ignore`d for docs/examples-only changes (`**.md`, `examples/**`),
+  which the harness never exercises; `[skip ci]` in a commit message skips it
+  too. Both fmt/validate still run via the unit-test workflows.
 - **Release Drafter** — automatic release notes generation; registry releases
   are git tags (`v*`)
 - **Dependabot** — dependency updates

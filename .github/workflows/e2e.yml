@@ -1,9 +1,14 @@
 name: E2E Tests
 
 on:
+  # Docs and examples never exercise the E2E harness (examples aren't run here,
+  # and fmt/validate cover them in the other workflows), so skip the heavy Kind
+  # suite when a change touches only those.
   pull_request:
+    paths-ignore: ['**.md', 'examples/**']
   push:
     branches: [main]
+    paths-ignore: ['**.md', 'examples/**']
   schedule:
     # Run every Monday at 8:00 UTC to verify E2E tests remain valid over time
     - cron: '0 8 * * 1'
