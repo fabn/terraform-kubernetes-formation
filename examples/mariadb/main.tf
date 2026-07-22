@@ -38,6 +38,7 @@ module "mariadb" {
   backup = {
     bucket = "my-backups-bucket"
     prefix = "myapp/db"
+    region = "eu-south-1" # builds the S3 endpoint (s3.<region>.amazonaws.com)
   }
 }
 

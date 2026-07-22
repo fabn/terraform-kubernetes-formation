@@ -20,6 +20,7 @@ run "mariadb_ha_contract" {
     namespace = "addon-test"
     database  = "myapp"
     username  = "myapp"
+    part_of   = "myapp"
   }
 
   assert {
@@ -43,8 +44,14 @@ run "mariadb_ha_contract" {
   }
 
   assert {
-    condition     = kubernetes_manifest.mariadb.manifest.spec.replication.enabled == true && kubernetes_manifest.mariadb.manifest.spec.replication.primary.automaticFailover == true
+    condition     = kubernetes_manifest.mariadb.manifest.spec.replication.enabled == true && kubernetes_manifest.mariadb.manifest.spec.replication.primary.autoFailover == true
     error_message = "HA should enable replication with automatic failover"
+  }
+
+  # inheritMetadata (correct field name) must carry both labels and annotations.
+  assert {
+    condition     = kubernetes_manifest.mariadb.manifest.spec.inheritMetadata.labels["app.kubernetes.io/part-of"] == "myapp" && can(kubernetes_manifest.mariadb.manifest.spec.inheritMetadata.annotations)
+    error_message = "inheritMetadata should carry both labels and annotations"
   }
 }
 
@@ -93,7 +100,7 @@ run "mariadb_backup_keyless" {
     database             = "app"
     username             = "app"
     service_account_name = "app-mariadb"
-    backup               = { bucket = "backups", prefix = "app" }
+    backup               = { bucket = "backups", prefix = "app", region = "eu-south-1" }
   }
 
   assert {
@@ -101,13 +108,20 @@ run "mariadb_backup_keyless" {
     error_message = "backup should target the S3 bucket"
   }
 
+  # The operator requires an explicit endpoint; it is derived from the region.
+  assert {
+    condition     = kubernetes_manifest.physical_backup[0].manifest.spec.storage.s3.endpoint == "s3.eu-south-1.amazonaws.com"
+    error_message = "backup should derive the AWS S3 endpoint from the region"
+  }
+
   assert {
     condition     = !can(kubernetes_manifest.physical_backup[0].manifest.spec.storage.s3.accessKeyIdSecretKeyRef)
     error_message = "keyless backup should omit static-key refs"
   }
 
+  # The service account is set at the top level of the PhysicalBackup spec.
   assert {
-    condition     = kubernetes_manifest.physical_backup[0].manifest.spec.podTemplate.serviceAccountName == "app-mariadb"
+    condition     = kubernetes_manifest.physical_backup[0].manifest.spec.serviceAccountName == "app-mariadb"
     error_message = "keyless backup Job should run under the service account"
   }
 }
@@ -125,7 +139,7 @@ run "mariadb_bootstrap_from" {
     database             = "app"
     username             = "app"
     service_account_name = "app-mariadb"
-    bootstrap_from       = { bucket = "dumps", prefix = "app", target_recovery_time = "2026-07-22T10:00:00Z" }
+    bootstrap_from       = { bucket = "dumps", prefix = "app", region = "eu-south-1", target_recovery_time = "2026-07-22T10:00:00Z" }
   }
 
   assert {
