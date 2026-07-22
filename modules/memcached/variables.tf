@@ -38,3 +38,9 @@ variable "labels" {
   type        = map(string)
   default     = {}
 }
+
+variable "annotations" {
+  description = "Extra annotations propagated to the memcached pods. Use for Datadog autodiscovery of the memcached integration and log collection (ad.datadoghq.com/<container>.*)."
+  type        = map(string)
+  default     = {}
+}
