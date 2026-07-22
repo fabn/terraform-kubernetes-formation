@@ -15,12 +15,28 @@ locals {
     var.labels,
   )
 
-  # Propagated (spec.labels) onto the operator-managed objects. managed-by is
-  # left off: those objects are managed by the operator.
-  inherited_labels = merge(
-    var.part_of != null ? { "app.kubernetes.io/part-of" = var.part_of } : {},
-    var.labels,
-  )
+  # The operator hardcodes these keys into the StatefulSet selector (immutable)
+  # and sets them on every object it creates, so they must never reach
+  # spec.labels: a user value diverges the pod template from the selector and
+  # the operator fails with "failed to generate dragonfly resources".
+  # app.kubernetes.io/part-of in particular is forced to "dragonfly", so
+  # part_of cannot be honored on the operator's objects — it still labels this
+  # module's own Secret/ServiceAccount via local.labels.
+  operator_reserved_labels = [
+    "app",
+    "app.kubernetes.io/name",
+    "app.kubernetes.io/instance",
+    "app.kubernetes.io/component",
+    "app.kubernetes.io/managed-by",
+    "app.kubernetes.io/version",
+    "app.kubernetes.io/part-of",
+  ]
+
+  # Extra labels propagated (spec.labels) onto the operator-managed objects,
+  # minus the reserved selector keys above.
+  inherited_labels = {
+    for k, v in var.labels : k => v if !contains(local.operator_reserved_labels, k)
+  }
 
   password  = var.auth ? random_password.auth[0].result : null
   redis_url = var.auth ? "redis://:${local.password}@${local.host}:${local.port}" : "redis://${local.host}:${local.port}"
@@ -79,8 +95,9 @@ resource "kubernetes_manifest" "dragonfly" {
     spec = merge(
       {
         replicas = var.replicas
-        # Dragonfly needs ~256Mi per io-thread; pin the count so memory is
-        # predictable (see the memory_mib validation).
+        # Dragonfly needs maxmemory (0.8 * limit) >= 256Mi per io-thread; pin
+        # the thread count so the memory floor is predictable (see the
+        # memory_mib validation).
         args = ["--proactor_threads=${var.threads}"]
         resources = {
           requests = { cpu = var.cpu_requests, memory = "${var.memory_mib}Mi" }
