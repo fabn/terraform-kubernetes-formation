@@ -3,6 +3,10 @@
 # only: real clusters install the operator once, out of band (the managed
 # companion in the infra repo). atomic makes helm wait for each release to be
 # healthy before the next step applies.
+#
+# Charts come from the OCI registry (the legacy https://helm.mariadb.com repo is
+# deprecated), pinned to the same version the infra repo installs so the E2E
+# exercises the real CR schema.
 
 terraform {
   required_providers {
@@ -18,7 +22,8 @@ resource "helm_release" "crds" {
   namespace        = "mariadb-system"
   create_namespace = true
   chart            = "mariadb-operator-crds"
-  repository       = "https://helm.mariadb.com/mariadb-operator"
+  version          = "26.6.0"
+  repository       = "oci://ghcr.io/mariadb-operator/charts"
   atomic           = true
 }
 
@@ -26,7 +31,8 @@ resource "helm_release" "operator" {
   name       = "mariadb-operator"
   namespace  = "mariadb-system"
   chart      = "mariadb-operator"
-  repository = "https://helm.mariadb.com/mariadb-operator"
+  version    = "26.6.0"
+  repository = "oci://ghcr.io/mariadb-operator/charts"
   atomic     = true
 
   depends_on = [helm_release.crds]
