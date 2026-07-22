@@ -26,8 +26,10 @@ the building block it composes.
   for ephemeral environments; override via `secret_env`
 - **Registry pull secret**: a `dockerconfigjson` Secret wired into every process
 - **Datadog**: optional UST tags + log annotations on every process
-- **Addons**: independent backing-service submodules (`postgres`, `redis`,
-  `memcached`) with a uniform contract — outputs `env` (plaintext config) and
+- **Addons**: independent backing-service submodules — `postgres` (or the
+  operator-backed `postgres-cnpg`), `redis` (or the operator-backed
+  `dragonfly`), `memcached` — with a uniform contract: outputs `env`
+  (plaintext config) and
   `sensitive_env` (credentials) the caller merges into the stack, Heroku-addon
   style — or the `addons` wrapper that sizes them behind one Heroku-like map
   (the in-cluster twin of the managed [`fabn/addons/aws`](https://registry.terraform.io/modules/fabn/addons/aws))
@@ -286,6 +288,24 @@ per instance and stays in TF state + the auth Secret.
   pod connect with no args)
 - `sensitive_env`: `DATABASE_URL`, `PGPASSWORD`
 
+### postgres-cnpg
+
+CloudNativePG operator Cluster — a drop-in swap for `postgres` (identical env
+contract; only the host differs, the operator serves the primary on
+`<name>-rw`). Primary + optional replicas with operator-managed failover, a
+per-instance generated password in TF state + the auth Secret, and optional
+continuous backup + PITR to S3 via the barman-cloud plugin (keyless with
+`inheritFromIAMRole` on EKS Pod Identity / IRSA). Requires the CloudNativePG
+operator (and, for backups, the barman-cloud plugin) installed cluster-wide.
+
+- `env`: `PGHOST` (the operator's `<name>-rw` Service), `PGPORT`, `PGUSER`,
+  `PGDATABASE`
+- `sensitive_env`: `DATABASE_URL`, `PGPASSWORD`
+
+Reference: [CloudNativePG](https://github.com/cloudnative-pg/cloudnative-pg)
+operator ([Cluster CRD](https://cloudnative-pg.io/docs/1.30/cloudnative-pg.v1)),
+[barman-cloud plugin](https://github.com/cloudnative-pg/plugin-barman-cloud).
+
 ### redis
 
 Bitnami Redis chart, standalone, no auth (in-cluster only). AOF persistence +
@@ -294,6 +314,20 @@ pressure.
 
 - `env`: `REDIS_URL`
 - `sensitive_env`: empty
+
+### dragonfly
+
+Operator-backed Dragonfly (Redis/Valkey-compatible) — a drop-in swap for
+`redis` (same `REDIS_URL` contract). Master + replica with operator-managed
+automatic failover, optional password auth (Terraform-owned) and optional S3
+snapshots (keyless via EKS Pod Identity / IRSA). Requires the Dragonfly
+operator installed cluster-wide.
+
+- `env`: `REDIS_URL` (auth off)
+- `sensitive_env`: `REDIS_URL` (auth on — the URL then carries the password)
+
+Reference: [Dragonfly operator](https://github.com/dragonflydb/dragonfly-operator)
+([Dragonfly CRD](https://www.dragonflydb.io/docs/managing-dragonfly/operator/dragonfly-configuration)).
 
 ### memcached
 
@@ -360,7 +394,12 @@ Outputs: `job_name`.
 ## Examples
 
 - [Minimal](examples/minimal) — web-only formation
-- [Full featured](examples/full-featured) — web + worker + all addons
+- [Full featured](examples/full-featured) — web + worker + all addons + a
+  release-phase migration Job
+- [Postgres (operator)](examples/postgres-cnpg) — a CloudNativePG Cluster wired
+  into the app through `DATABASE_URL`, with optional keyless S3 backup
+- [Dragonfly](examples/dragonfly) — the operator-backed Redis/Valkey cache
+  (HA master + replica), with optional keyless S3 snapshots
 
 ## Testing
 
