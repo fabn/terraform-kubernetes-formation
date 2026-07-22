@@ -1,5 +1,5 @@
 terraform {
-  required_version = ">= 1.9"
+  required_version = ">= 1.14"
 
   # Declares the whole subtree's providers: kubernetes (memcached workload),
   # helm (postgres/redis Bitnami charts) and random (postgres password).
