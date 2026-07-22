@@ -302,6 +302,10 @@ operator (and, for backups, the barman-cloud plugin) installed cluster-wide.
   `PGDATABASE`
 - `sensitive_env`: `DATABASE_URL`, `PGPASSWORD`
 
+Reference: [CloudNativePG](https://github.com/cloudnative-pg/cloudnative-pg)
+operator ([Cluster CRD](https://cloudnative-pg.io/docs/1.30/cloudnative-pg.v1)),
+[barman-cloud plugin](https://github.com/cloudnative-pg/plugin-barman-cloud).
+
 ### redis
 
 Bitnami Redis chart, standalone, no auth (in-cluster only). AOF persistence +
@@ -321,6 +325,9 @@ operator installed cluster-wide.
 
 - `env`: `REDIS_URL` (auth off)
 - `sensitive_env`: `REDIS_URL` (auth on — the URL then carries the password)
+
+Reference: [Dragonfly operator](https://github.com/dragonflydb/dragonfly-operator)
+([Dragonfly CRD](https://www.dragonflydb.io/docs/managing-dragonfly/operator/dragonfly-configuration)).
 
 ### memcached
 
