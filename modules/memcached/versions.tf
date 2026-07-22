@@ -1,5 +1,5 @@
 terraform {
-  required_version = ">= 1.9"
+  required_version = ">= 1.14"
 
   # No direct kubernetes resources here, but the workload child module
   # inherits the default kubernetes provider from this declaration.

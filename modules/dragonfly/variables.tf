@@ -89,7 +89,9 @@ variable "snapshot" {
   default = null
 
   validation {
-    condition     = var.snapshot == null || (var.snapshot.s3_uri != null) != (var.snapshot.pvc_size != null)
+    # Ternary, not `||`: older Terraform doesn't short-circuit the `||`, so it
+    # would read var.snapshot.s3_uri even when snapshot is null (the default).
+    condition     = var.snapshot == null ? true : (var.snapshot.s3_uri != null) != (var.snapshot.pvc_size != null)
     error_message = "Set exactly one of snapshot.s3_uri or snapshot.pvc_size."
   }
 }
