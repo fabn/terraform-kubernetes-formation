@@ -26,13 +26,13 @@ variable "part_of" {
 }
 
 variable "labels" {
-  description = "Extra labels on the MariaDB/Secrets and propagated (spec.inheritedMetadata) onto the objects the operator creates."
+  description = "Extra labels on the MariaDB/Secrets and propagated (spec.inheritMetadata) onto the objects the operator creates."
   type        = map(string)
   default     = {}
 }
 
 variable "annotations" {
-  description = "Annotations propagated (spec.inheritedMetadata) onto the objects the operator creates."
+  description = "Annotations propagated (spec.inheritMetadata) onto the objects the operator creates."
   type        = map(string)
   default     = {}
 }
@@ -155,14 +155,16 @@ variable "backup" {
     Scheduled physical backups to an S3-compatible object store (a PhysicalBackup
     CR). Keyless by default: leave credentials_secret_name null and the backup
     Job writes with the pod's ambient IAM identity (EKS Pod Identity / IRSA) via
-    service_account_name — no keys to ship. Set endpoint_url only for non-AWS
-    S3-compatible stores. Leave null to skip backups.
+    service_account_name — no keys to ship. The operator requires an explicit S3
+    endpoint, so `region` builds it (`s3.<region>.amazonaws.com`); set
+    endpoint_url only to override it for non-AWS S3-compatible stores. Leave null
+    to skip backups.
   EOT
   type = object({
     bucket                  = string
     prefix                  = optional(string)
-    region                  = optional(string)
-    endpoint_url            = optional(string) # non-AWS S3-compatible endpoint; omit for AWS S3
+    region                  = string           # required — builds the S3 endpoint (s3.<region>.amazonaws.com)
+    endpoint_url            = optional(string) # override the endpoint for non-AWS S3-compatible stores
     credentials_secret_name = optional(string) # null => keyless (Pod Identity / IRSA)
     access_key_id_key       = optional(string, "access-key-id")
     secret_access_key_key   = optional(string, "secret-access-key")
@@ -184,13 +186,19 @@ variable "bootstrap_from" {
     Adopt an existing database: bootstrap the instance from a logical dump stored
     in S3 (the object must be named `backup.<RFC3339>.sql`, e.g.
     `backup.2026-07-22T10:00:00Z.sql`). Keyless via service_account_name, same as
-    backup. Set target_recovery_time to pick a specific dump when several exist.
-    Only applied when the instance is first created.
+    backup; `region` builds the S3 endpoint. Set target_recovery_time to pick a
+    specific dump when several exist. Only applied when the instance is first
+    created.
+
+    Caveat: a full logical dump carries the application user, so the operator's
+    User reconcile may fail (`ALTER USER ... Error 1396`) and the app password
+    won't match passwordSecretKeyRef. After adopting, reset the app user to match
+    the Secret (as root), or take the source dump with data only.
   EOT
   type = object({
     bucket                  = string
     prefix                  = optional(string)
-    region                  = optional(string)
+    region                  = string
     endpoint_url            = optional(string)
     credentials_secret_name = optional(string)
     access_key_id_key       = optional(string, "access-key-id")

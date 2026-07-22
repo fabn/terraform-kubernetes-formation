@@ -42,10 +42,14 @@ locals {
   # when no credentials Secret is given: the key refs are simply omitted and the
   # pod writes with its ambient IAM identity (EKS Pod Identity / IRSA).
   backup_s3 = var.backup == null ? null : merge(
-    { bucket = var.backup.bucket },
+    {
+      bucket = var.backup.bucket
+      region = var.backup.region
+      # The operator requires an explicit endpoint; derive the AWS one from the
+      # region unless an override is given for a non-AWS S3-compatible store.
+      endpoint = coalesce(var.backup.endpoint_url, "s3.${var.backup.region}.amazonaws.com")
+    },
     var.backup.prefix != null ? { prefix = var.backup.prefix } : {},
-    var.backup.region != null ? { region = var.backup.region } : {},
-    var.backup.endpoint_url != null ? { endpoint = var.backup.endpoint_url } : {},
     var.backup.credentials_secret_name != null ? {
       accessKeyIdSecretKeyRef     = { name = var.backup.credentials_secret_name, key = var.backup.access_key_id_key }
       secretAccessKeySecretKeyRef = { name = var.backup.credentials_secret_name, key = var.backup.secret_access_key_key }
@@ -53,10 +57,12 @@ locals {
   )
 
   bootstrap_s3 = var.bootstrap_from == null ? null : merge(
-    { bucket = var.bootstrap_from.bucket },
+    {
+      bucket   = var.bootstrap_from.bucket
+      region   = var.bootstrap_from.region
+      endpoint = coalesce(var.bootstrap_from.endpoint_url, "s3.${var.bootstrap_from.region}.amazonaws.com")
+    },
     var.bootstrap_from.prefix != null ? { prefix = var.bootstrap_from.prefix } : {},
-    var.bootstrap_from.region != null ? { region = var.bootstrap_from.region } : {},
-    var.bootstrap_from.endpoint_url != null ? { endpoint = var.bootstrap_from.endpoint_url } : {},
     var.bootstrap_from.credentials_secret_name != null ? {
       accessKeyIdSecretKeyRef     = { name = var.bootstrap_from.credentials_secret_name, key = var.bootstrap_from.access_key_id_key }
       secretAccessKeySecretKeyRef = { name = var.bootstrap_from.credentials_secret_name, key = var.bootstrap_from.secret_access_key_key }
@@ -142,7 +148,7 @@ resource "kubernetes_manifest" "mariadb" {
       local.is_ha ? {
         replication = {
           enabled = true
-          primary = { automaticFailover = var.auto_failover }
+          primary = { autoFailover = var.auto_failover }
         }
       } : {},
       var.image != null ? { image = var.image } : {},
@@ -152,11 +158,15 @@ resource "kubernetes_manifest" "mariadb" {
       length(var.node_selector) > 0 ? { nodeSelector = var.node_selector } : {},
       length(var.tolerations) > 0 ? { tolerations = var.tolerations } : {},
       var.priority_class_name != null ? { priorityClassName = var.priority_class_name } : {},
+      # inheritMetadata is typed object({labels, annotations}) by the CRD, so send
+      # both keys (empty maps when unused) or kubernetes_manifest's transform
+      # rejects the partial object. (Note: the field is inheritMetadata, not the
+      # CNPG-style inheritedMetadata.)
       length(local.inherited_labels) > 0 || length(var.annotations) > 0 ? {
-        inheritedMetadata = merge(
-          length(local.inherited_labels) > 0 ? { labels = local.inherited_labels } : {},
-          length(var.annotations) > 0 ? { annotations = var.annotations } : {},
-        )
+        inheritMetadata = {
+          labels      = local.inherited_labels
+          annotations = var.annotations
+        }
       } : {},
       # Adopt an existing database from a logical dump in S3 (first create only).
       var.bootstrap_from != null ? {
@@ -213,7 +223,7 @@ resource "kubernetes_manifest" "physical_backup" {
       },
       # Keyless: run the backup Job under the SA so it inherits the IAM identity.
       var.service_account_name != null && var.backup.credentials_secret_name == null ? {
-        podTemplate = { serviceAccountName = var.service_account_name }
+        serviceAccountName = var.service_account_name
       } : {},
     )
   }
