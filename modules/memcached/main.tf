@@ -18,4 +18,6 @@ module "memcached" {
   cpu_requests    = var.cpu_requests
   memory_requests = var.memory_requests
   memory_limits   = "${ceil(var.max_memory * 1.25)}Mi"
+
+  labels = var.labels
 }
