@@ -99,8 +99,11 @@ resource "kubernetes_manifest" "dragonfly" {
         # the thread count so the memory floor is predictable (see the
         # memory_mib validation).
         args = ["--proactor_threads=${var.threads}"]
+        # The memory floor is on the LIMIT (Dragonfly reads the cgroup limit for
+        # maxmemory), so the request can be set much lower to reserve less node
+        # capacity while the limit still satisfies Dragonfly.
         resources = {
-          requests = { cpu = var.cpu_requests, memory = "${var.memory_mib}Mi" }
+          requests = { cpu = var.cpu_requests, memory = "${coalesce(var.memory_requests_mib, var.memory_mib)}Mi" }
           limits   = { memory = "${var.memory_mib}Mi" }
         }
       },
