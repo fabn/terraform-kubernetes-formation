@@ -41,6 +41,15 @@ locals {
   password  = var.auth ? random_password.auth[0].result : null
   redis_url = var.auth ? "redis://:${local.password}@${local.host}:${local.port}" : "redis://${local.host}:${local.port}"
 
+  # Dragonfly needs maxmemory (0.8 * limit) >= 256Mi per io-thread; pin the
+  # thread count so the memory floor is predictable (see the memory_mib
+  # validation). `--cache_mode` turns the instance into a cache: at maxmemory it
+  # evicts the least-recently-used keys instead of rejecting writes with OOM.
+  args = concat(
+    ["--proactor_threads=${var.threads}"],
+    var.cache_mode ? ["--cache_mode"] : [],
+  )
+
   snapshot = var.snapshot == null ? null : merge(
     { cron = var.snapshot.cron },
     var.snapshot.s3_uri != null ? { dir = var.snapshot.s3_uri } : {},
@@ -95,10 +104,7 @@ resource "kubernetes_manifest" "dragonfly" {
     spec = merge(
       {
         replicas = var.replicas
-        # Dragonfly needs maxmemory (0.8 * limit) >= 256Mi per io-thread; pin
-        # the thread count so the memory floor is predictable (see the
-        # memory_mib validation).
-        args = ["--proactor_threads=${var.threads}"]
+        args     = local.args
         # The memory floor is on the LIMIT (Dragonfly reads the cgroup limit for
         # maxmemory), so the request can be set much lower to reserve less node
         # capacity while the limit still satisfies Dragonfly.

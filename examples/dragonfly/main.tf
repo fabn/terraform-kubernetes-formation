@@ -30,6 +30,14 @@ module "dragonfly" {
   threads    = 1
   memory_mib = 512
 
+  # Run as a data store (default). To use this instance purely as a cache,
+  # set `cache_mode = true` (evicts LRU keys at maxmemory instead of erroring),
+  # drop `replicas` to 1 for a disposable cache, and leave `snapshot` unset.
+  # `url_env_var` renames the emitted URL (e.g. "REDIS_CACHE_URL") so a
+  # dedicated cache can sit next to a primary Redis without the URLs colliding.
+  cache_mode  = false
+  url_env_var = "REDIS_URL"
+
   # Optional keyless S3 snapshots: the instance pods write with their ambient
   # IAM identity, so pair this ServiceAccount with an EKS Pod Identity
   # association (or IRSA) on the bucket in your cloud infra.

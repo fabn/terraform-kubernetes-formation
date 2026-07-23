@@ -45,6 +45,115 @@ run "dragonfly_auth_contract" {
   }
 }
 
+# Cache mode: --cache_mode is appended to args so the instance evicts at
+# maxmemory instead of rejecting writes; persistence stays off (no snapshot).
+run "dragonfly_cache_mode" {
+  command = apply
+
+  module {
+    source = "./modules/dragonfly"
+  }
+
+  variables {
+    namespace  = "addon-test"
+    cache_mode = true
+  }
+
+  assert {
+    condition     = contains(kubernetes_manifest.dragonfly.manifest.spec.args, "--cache_mode")
+    error_message = "cache_mode should append --cache_mode to the instance args"
+  }
+
+  assert {
+    condition     = contains(kubernetes_manifest.dragonfly.manifest.spec.args, "--proactor_threads=1")
+    error_message = "cache_mode should keep the --proactor_threads arg"
+  }
+
+  assert {
+    condition     = !can(kubernetes_manifest.dragonfly.manifest.spec.snapshot)
+    error_message = "cache mode leaves persistence off (no snapshot) by default"
+  }
+}
+
+# Default (data-store) mode: --cache_mode must not leak in.
+run "dragonfly_no_cache_mode_by_default" {
+  command = apply
+
+  module {
+    source = "./modules/dragonfly"
+  }
+
+  variables {
+    namespace = "addon-test"
+  }
+
+  assert {
+    condition     = !contains(kubernetes_manifest.dragonfly.manifest.spec.args, "--cache_mode")
+    error_message = "cache_mode is off by default, so --cache_mode should be absent"
+  }
+}
+
+# Configurable output variable name: emit REDIS_CACHE_URL instead of REDIS_URL.
+run "dragonfly_custom_url_env_var" {
+  command = apply
+
+  module {
+    source = "./modules/dragonfly"
+  }
+
+  variables {
+    namespace   = "addon-test"
+    name        = "cache"
+    auth        = false
+    url_env_var = "REDIS_CACHE_URL"
+  }
+
+  assert {
+    condition     = output.env.REDIS_CACHE_URL == "redis://cache:6379"
+    error_message = "the URL should be emitted under the custom url_env_var key"
+  }
+
+  assert {
+    condition     = !can(output.env.REDIS_URL)
+    error_message = "the default REDIS_URL key should not be present when renamed"
+  }
+}
+
+# Custom url_env_var also renames the sensitive_env key when auth is on.
+run "dragonfly_custom_url_env_var_with_auth" {
+  command = apply
+
+  module {
+    source = "./modules/dragonfly"
+  }
+
+  variables {
+    namespace   = "addon-test"
+    url_env_var = "REDIS_CACHE_URL"
+  }
+
+  assert {
+    condition     = endswith(nonsensitive(output.sensitive_env.REDIS_CACHE_URL), "@dragonfly:6379")
+    error_message = "auth URL should be emitted under the custom url_env_var key in sensitive_env"
+  }
+}
+
+# url_env_var must be a valid environment variable name.
+run "dragonfly_rejects_invalid_url_env_var" {
+  command = plan
+
+  module {
+    source = "./modules/dragonfly"
+  }
+
+  variables {
+    namespace   = "addon-test"
+    url_env_var = "1-bad name"
+  }
+
+  expect_failures = [var.url_env_var]
+}
+
 # Auth off: REDIS_URL is plaintext in env, sensitive_env empty.
 run "dragonfly_no_auth" {
   command = apply
