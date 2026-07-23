@@ -115,8 +115,8 @@ run "cnpg_owner_secret" {
   }
 }
 
-# QoS Guaranteed: CPU limit defaults to the CPU request.
-run "cnpg_guaranteed_qos" {
+# No CPU limit by default (Burstable, no CFS throttling); the memory limit stays.
+run "cnpg_no_cpu_limit_by_default" {
   command = apply
 
   module {
@@ -131,8 +131,35 @@ run "cnpg_guaranteed_qos" {
   }
 
   assert {
-    condition     = local.resources.requests.cpu == local.resources.limits.cpu
-    error_message = "CPU request should equal CPU limit (QoS Guaranteed) by default"
+    condition     = !can(local.resources.limits.cpu)
+    error_message = "There should be no CPU limit by default (Burstable QoS)"
+  }
+
+  assert {
+    condition     = local.resources.limits.memory != null
+    error_message = "The memory limit should still be set"
+  }
+}
+
+# cpu_limits opts into a CPU ceiling (e.g. = cpu_requests for Guaranteed QoS).
+run "cnpg_cpu_limit_opt_in" {
+  command = apply
+
+  module {
+    source = "./modules/postgres-cnpg"
+  }
+
+  variables {
+    namespace    = "addon-test"
+    database     = "myapp"
+    username     = "myapp"
+    cpu_requests = "250m"
+    cpu_limits   = "500m"
+  }
+
+  assert {
+    condition     = local.resources.limits.cpu == "500m"
+    error_message = "cpu_limits should set the CPU limit when provided"
   }
 }
 

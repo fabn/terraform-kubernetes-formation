@@ -261,6 +261,48 @@ run "dragonfly_memory_floor_is_320_per_thread" {
   expect_failures = [var.memory_mib]
 }
 
+# The request decouples from the limit: Dragonfly's floor is on the limit
+# (cgroup), so a small request reserves less node capacity while the limit still
+# satisfies it.
+run "dragonfly_memory_request_below_limit" {
+  command = plan
+
+  module {
+    source = "./modules/dragonfly"
+  }
+
+  variables {
+    namespace           = "addon-test"
+    memory_mib          = 320
+    memory_requests_mib = 64
+  }
+
+  assert {
+    condition = (
+      kubernetes_manifest.dragonfly.manifest.spec.resources.requests.memory == "64Mi" &&
+      kubernetes_manifest.dragonfly.manifest.spec.resources.limits.memory == "320Mi"
+    )
+    error_message = "memory request should follow memory_requests_mib while the limit follows memory_mib"
+  }
+}
+
+# A request above the limit is rejected (k8s forbids request > limit).
+run "dragonfly_rejects_request_above_limit" {
+  command = plan
+
+  module {
+    source = "./modules/dragonfly"
+  }
+
+  variables {
+    namespace           = "addon-test"
+    memory_mib          = 320
+    memory_requests_mib = 512
+  }
+
+  expect_failures = [var.memory_requests_mib]
+}
+
 # Reserved selector labels must never reach spec.labels: the operator hardcodes
 # app.kubernetes.io/part-of into the StatefulSet selector, so propagating it
 # there makes resource generation fail. part_of only labels this module's own

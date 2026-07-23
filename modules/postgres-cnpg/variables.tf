@@ -93,7 +93,7 @@ variable "cpu_requests" {
 }
 
 variable "cpu_limits" {
-  description = "CPU limit per instance. null pins it to cpu_requests (QoS Guaranteed)."
+  description = "CPU limit per instance. null (default) omits the CPU limit entirely — Burstable QoS, no CFS throttling, recommended for a database. Set it only to enforce a ceiling (e.g. cpu_limits = cpu_requests for Guaranteed QoS)."
   type        = string
   default     = null
 }

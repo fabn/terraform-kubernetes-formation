@@ -51,13 +51,24 @@ variable "threads" {
 }
 
 variable "memory_mib" {
-  description = "Pod memory request/limit in MiB (Dragonfly sets maxmemory to ~80% of it). Must be at least 320 MiB per thread (0.8 * 320 = 256) or Dragonfly will not start."
+  description = "Pod memory LIMIT in MiB. Dragonfly reads the cgroup limit (this value) and sets maxmemory to ~80% of it, so it must be at least 320 MiB per thread (0.8 * 320 = 256) or Dragonfly will not start. The request is separate — see memory_requests_mib."
   type        = number
   default     = 512
 
   validation {
     condition     = var.memory_mib >= var.threads * 320
     error_message = "memory_mib must be at least 320 per thread (threads * 320): Dragonfly needs maxmemory (0.8 * limit) >= 256 per thread or it exits at boot."
+  }
+}
+
+variable "memory_requests_mib" {
+  description = "Pod memory REQUEST in MiB. Dragonfly's floor is on the limit (memory_mib), not the request, so the request can be much smaller than the limit — it only reserves scheduling capacity. null pins it to memory_mib (request == limit). Set it low (e.g. 64) for a light instance that still gets the 320+ limit Dragonfly needs."
+  type        = number
+  default     = null
+
+  validation {
+    condition     = var.memory_requests_mib == null ? true : var.memory_requests_mib <= var.memory_mib
+    error_message = "memory_requests_mib must be <= memory_mib (a request cannot exceed the limit)."
   }
 }
 
