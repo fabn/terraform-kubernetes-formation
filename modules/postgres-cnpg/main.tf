@@ -29,7 +29,14 @@ locals {
 
   resources = {
     requests = { cpu = var.cpu_requests, memory = var.memory_requests }
-    limits   = { cpu = coalesce(var.cpu_limits, var.cpu_requests), memory = var.memory_limits }
+    # No CPU limit by default: a CPU limit throttles the container via CFS quota
+    # even when the node has spare CPU, which hurts a latency-sensitive workload
+    # like a database. cpu_limits is opt-in; the memory limit always stays (OOM
+    # guard).
+    limits = merge(
+      { memory = var.memory_limits },
+      var.cpu_limits != null ? { cpu = var.cpu_limits } : {},
+    )
   }
 }
 
