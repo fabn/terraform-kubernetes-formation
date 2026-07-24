@@ -5,7 +5,7 @@
 # in-process metrics exporter reached on the pod IP by autodiscovery checks).
 module "process" {
   source  = "fabn/workload/kubernetes"
-  version = "~> 0.8.2"
+  version = ">= 0.8.2, < 1.0.0"
 
   for_each = var.formation
 
