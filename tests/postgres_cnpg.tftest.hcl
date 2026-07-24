@@ -61,6 +61,48 @@ run "cnpg_env_contract" {
     condition     = kubernetes_manifest.cluster.manifest.spec.affinity.enablePodAntiAffinity == true
     error_message = "pod anti-affinity should be enabled by default"
   }
+
+  # Drain-friendly shutdown defaults, well below the operator's 1800s/180s.
+  assert {
+    condition     = kubernetes_manifest.cluster.manifest.spec.stopDelay == 300 && kubernetes_manifest.cluster.manifest.spec.smartShutdownTimeout == 30
+    error_message = "shutdown timings should default to 300s / 30s"
+  }
+
+  # The remaining timings stay absent so the operator default applies.
+  assert {
+    condition     = !can(kubernetes_manifest.cluster.manifest.spec.switchoverDelay) && !can(kubernetes_manifest.cluster.manifest.spec.startDelay) && !can(kubernetes_manifest.cluster.manifest.spec.failoverDelay)
+    error_message = "opt-in timings should be absent unless set"
+  }
+}
+
+# All lifecycle timings are forwarded to the Cluster spec when set.
+run "cnpg_lifecycle_timings" {
+  command = apply
+
+  module {
+    source = "./modules/postgres-cnpg"
+  }
+
+  variables {
+    namespace              = "addon-test"
+    database               = "myapp"
+    username               = "myapp"
+    stop_delay             = 600
+    smart_shutdown_timeout = 60
+    switchover_delay       = 120
+    start_delay            = 900
+    failover_delay         = 5
+  }
+
+  assert {
+    condition     = kubernetes_manifest.cluster.manifest.spec.stopDelay == 600 && kubernetes_manifest.cluster.manifest.spec.smartShutdownTimeout == 60
+    error_message = "stop_delay / smart_shutdown_timeout should reach the Cluster spec"
+  }
+
+  assert {
+    condition     = kubernetes_manifest.cluster.manifest.spec.switchoverDelay == 120 && kubernetes_manifest.cluster.manifest.spec.startDelay == 900 && kubernetes_manifest.cluster.manifest.spec.failoverDelay == 5
+    error_message = "opt-in timings should be forwarded when set"
+  }
 }
 
 # Custom name drives every derived Service / resource name.

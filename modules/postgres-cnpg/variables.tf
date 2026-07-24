@@ -193,3 +193,55 @@ variable "backup" {
   })
   default = null
 }
+
+# --- instance lifecycle (shutdown / failover timings) ------------------------
+# CloudNativePG's own defaults (stopDelay 1800s, smartShutdownTimeout 180s,
+# switchoverDelay / startDelay 3600s) are tuned for large databases and are
+# hostile to fast node lifecycles: stopDelay is copied verbatim onto the pod's
+# terminationGracePeriodSeconds, so the 1800s default lets a single instance
+# block a node drain (Karpenter / cluster-autoscaler consolidation) for up to
+# 30 minutes, and it can never be honoured inside a Spot interruption's
+# ~2-minute window anyway. This module therefore ships shorter, drain-friendly
+# shutdown defaults; raise them for a large database whose shutdown checkpoint
+# needs more time. The remaining timings default to null (operator default) so
+# they stay opt-in.
+
+variable "stop_delay" {
+  description = "Seconds the operator waits for a graceful (smart then fast) shutdown before killing the instance. CloudNativePG copies this onto the pod's terminationGracePeriodSeconds, so it also bounds how long the instance can delay a node drain. The operator default is 1800; this module lowers it to keep node consolidation and Spot interruptions responsive. Raise it for a large database whose shutdown checkpoint needs more time."
+  type        = number
+  default     = 300
+
+  validation {
+    condition     = var.stop_delay > 0
+    error_message = "stop_delay must be > 0."
+  }
+}
+
+variable "smart_shutdown_timeout" {
+  description = "Seconds of stop_delay spent in smart shutdown (waiting for existing connections to close on their own) before escalating to fast shutdown. Persistent application connection pools never close voluntarily, so a large value only delays the inevitable fast shutdown; a small one cuts over quickly. Must be < stop_delay. The operator default is 180; this module lowers it."
+  type        = number
+  default     = 30
+
+  validation {
+    condition     = var.smart_shutdown_timeout >= 0 && var.smart_shutdown_timeout < var.stop_delay
+    error_message = "smart_shutdown_timeout must be >= 0 and < stop_delay."
+  }
+}
+
+variable "switchover_delay" {
+  description = "Seconds the operator allows for a planned switchover (former primary shutdown + new primary promotion) before failing it. null uses the operator default (3600). Lower it for more decisive switchovers on small databases."
+  type        = number
+  default     = null
+}
+
+variable "start_delay" {
+  description = "Seconds the operator waits for an instance to become ready at startup before considering it failed (drives the startup probe budget). null uses the operator default (3600). Keep it generous when a replica may bootstrap from a large base backup."
+  type        = number
+  default     = null
+}
+
+variable "failover_delay" {
+  description = "Seconds the operator waits before triggering a failover after the primary becomes unreachable. null uses the operator default (0, immediate). Raise it to ride out brief primary blips without promoting a replica."
+  type        = number
+  default     = null
+}

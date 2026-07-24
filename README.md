@@ -308,6 +308,18 @@ operator (and, for backups, the barman-cloud plugin) installed cluster-wide.
   `PGDATABASE`
 - `sensitive_env`: `DATABASE_URL`, `PGPASSWORD`
 
+**Shutdown / lifecycle timings.** CloudNativePG's stock shutdown budget
+(`stopDelay` 1800s, `smartShutdownTimeout` 180s) is tuned for large databases
+and works against fast node lifecycles: the operator copies `stopDelay` onto
+the pod's `terminationGracePeriodSeconds`, so at the default a single instance
+can hold up a node drain (cluster-autoscaler / Karpenter consolidation) for up
+to 30 minutes, and it can never be honoured inside a Spot interruption's
+~2-minute window anyway. This addon therefore ships shorter, drain-friendly
+defaults — `stop_delay` **300s**, `smart_shutdown_timeout` **30s** — and
+exposes `switchover_delay`, `start_delay` and `failover_delay` as opt-in
+passthroughs (`null` ⇒ operator default). Raise `stop_delay` for a large
+database whose shutdown checkpoint legitimately needs more time.
+
 Reference: [CloudNativePG](https://github.com/cloudnative-pg/cloudnative-pg)
 operator ([Cluster CRD](https://cloudnative-pg.io/docs/1.30/cloudnative-pg.v1)),
 [barman-cloud plugin](https://github.com/cloudnative-pg/plugin-barman-cloud).
