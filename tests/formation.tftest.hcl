@@ -336,3 +336,83 @@ run "node_selector_and_pod_affinity_passthrough" {
     error_message = "Web process should forward the pod affinity"
   }
 }
+
+run "anti_affinity_and_pdb_passthrough" {
+  command = plan
+
+  variables {
+    formation = {
+      # No anti_affinity set: inherits the "soft" default (spread replicas
+      # best-effort), matching fabn/workload/kubernetes.
+      web = {
+        web   = true
+        ports = { http = 3000 }
+      }
+      # Hard anti-affinity + a PodDisruptionBudget guarding the worker.
+      worker = {
+        web           = false
+        replicas      = 3
+        anti_affinity = "hard"
+        pdb_enabled   = true
+        pdb_config    = { max_unavailable = "1" }
+      }
+    }
+  }
+
+  assert {
+    condition     = module.process["web"].deployment.spec[0].template[0].spec[0].affinity[0].pod_anti_affinity[0].preferred_during_scheduling_ignored_during_execution[0].weight == 1
+    error_message = "The default (soft) anti-affinity should emit a preferred pod anti-affinity term"
+  }
+
+  assert {
+    condition     = module.process["worker"].deployment.spec[0].template[0].spec[0].affinity[0].pod_anti_affinity[0].required_during_scheduling_ignored_during_execution[0].topology_key == "kubernetes.io/hostname"
+    error_message = "anti_affinity = \"hard\" should emit a required pod anti-affinity term"
+  }
+}
+
+run "raw_pod_anti_affinity_and_topology_spread_passthrough" {
+  command = plan
+
+  variables {
+    formation = {
+      web = {
+        web   = true
+        ports = { http = 3000 }
+        # Raw spread rule on a custom topology key, additive to the default
+        # "soft" host-level anti-affinity.
+        pod_anti_affinity = {
+          required = [
+            { topology_key = "topology.kubernetes.io/zone", match_labels = { app = "web" } },
+          ]
+        }
+        topology_spread_constraints = [
+          {
+            max_skew           = 1
+            topology_key       = "topology.kubernetes.io/zone"
+            when_unsatisfiable = "DoNotSchedule"
+          },
+        ]
+      }
+    }
+  }
+
+  assert {
+    condition     = module.process["web"].deployment.spec[0].template[0].spec[0].affinity[0].pod_anti_affinity[0].required_during_scheduling_ignored_during_execution[0].topology_key == "topology.kubernetes.io/zone"
+    error_message = "Raw pod_anti_affinity required term should be forwarded verbatim"
+  }
+
+  assert {
+    condition     = module.process["web"].deployment.spec[0].template[0].spec[0].affinity[0].pod_anti_affinity[0].preferred_during_scheduling_ignored_during_execution[0].weight == 1
+    error_message = "Raw pod_anti_affinity should coexist with the soft anti_affinity shorthand"
+  }
+
+  assert {
+    condition     = module.process["web"].deployment.spec[0].template[0].spec[0].topology_spread_constraint[0].max_skew == 1
+    error_message = "topology_spread_constraints should be forwarded"
+  }
+
+  assert {
+    condition     = module.process["web"].deployment.spec[0].template[0].spec[0].topology_spread_constraint[0].when_unsatisfiable == "DoNotSchedule"
+    error_message = "topology_spread_constraints when_unsatisfiable should be forwarded"
+  }
+}

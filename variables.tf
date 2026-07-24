@@ -119,11 +119,88 @@ variable "formation" {
         })), [])
       })), [])
     }))
+    # Raw pod anti-affinity (spread) rules, same shape as pod_affinity. This is
+    # the escape hatch for arbitrary topology keys / label selectors; it is
+    # additive to the `anti_affinity` shorthand below — both render into the
+    # same pod_anti_affinity block when set together. Passed through verbatim.
+    pod_anti_affinity = optional(object({
+      required = optional(list(object({
+        topology_key = string
+        namespaces   = optional(list(string))
+        match_labels = optional(map(string), {})
+        match_expressions = optional(list(object({
+          key      = string
+          operator = string
+          values   = optional(list(string), [])
+        })), [])
+      })), [])
+      preferred = optional(list(object({
+        weight       = number
+        topology_key = string
+        namespaces   = optional(list(string))
+        match_labels = optional(map(string), {})
+        match_expressions = optional(list(object({
+          key      = string
+          operator = string
+          values   = optional(list(string), [])
+        })), [])
+      })), [])
+    }))
+    # Pod anti-affinity strategy for spreading this process's own replicas
+    # across nodes: "soft" (preferred, best-effort) or "hard" (required, one
+    # replica per node — a replica stays Pending when nodes run out). Defaults
+    # to "soft", matching fabn/workload/kubernetes. A top-level optional
+    # attribute cannot forward an explicit null (Terraform coerces it back to
+    # the default), so disabling anti-affinity is not exposed here — soft
+    # spreading is always at least a preference. For arbitrary rules beyond
+    # host-level spread, use the raw `pod_anti_affinity` above (additive).
+    anti_affinity = optional(string, "soft")
+    # Topology spread constraints for even distribution across topology domains
+    # (zones, nodes). Each entry sets max_skew + topology_key + when_unsatisfiable
+    # ("DoNotSchedule"/"ScheduleAnyway"), optional min_domains; label_selector
+    # defaults to the workload's own pod labels. Passed through verbatim.
+    topology_spread_constraints = optional(list(object({
+      max_skew           = number
+      topology_key       = string
+      when_unsatisfiable = string
+      min_domains        = optional(number)
+      label_selector = optional(object({
+        match_labels = optional(map(string), {})
+        match_expressions = optional(list(object({
+          key      = string
+          operator = string
+          values   = optional(list(string), [])
+        })), [])
+      }))
+    })))
+    # PodDisruptionBudget for this process, guarding availability during
+    # voluntary disruptions (node drains, rollouts). `pdb_enabled` creates the
+    # PDB; `pdb_config` sets the budget (defaults to max_unavailable = "1" in
+    # fabn/workload/kubernetes). Set min_available or max_unavailable, not both.
+    pdb_enabled = optional(bool, false)
+    pdb_config = optional(object({
+      min_available   = optional(string)
+      max_unavailable = optional(string, "1")
+    }))
   }))
 
   validation {
     condition     = length([for k, p in var.formation : k if p.web]) <= 1
     error_message = "At most one formation entry may set web = true."
+  }
+
+  validation {
+    condition     = alltrue([for p in var.formation : contains(["soft", "hard"], p.anti_affinity)])
+    error_message = "anti_affinity must be \"soft\" or \"hard\"."
+  }
+
+  validation {
+    condition = alltrue([
+      for p in var.formation : p.topology_spread_constraints == null ? true : alltrue([
+        for c in p.topology_spread_constraints : contains(["DoNotSchedule", "ScheduleAnyway"], c.when_unsatisfiable)
+      ])
+    ])
+    error_message = "topology_spread_constraints when_unsatisfiable must be \"DoNotSchedule\" or \"ScheduleAnyway\"."
   }
 }
 
