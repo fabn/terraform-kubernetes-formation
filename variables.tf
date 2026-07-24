@@ -119,11 +119,33 @@ variable "formation" {
         })), [])
       })), [])
     }))
+    # Pod anti-affinity strategy for spreading this process's own replicas
+    # across nodes: "soft" (preferred, best-effort) or "hard" (required, one
+    # replica per node — a replica stays Pending when nodes run out). Defaults
+    # to "soft", matching fabn/workload/kubernetes. A top-level optional
+    # attribute cannot forward an explicit null (Terraform coerces it back to
+    # the default), so disabling anti-affinity is not exposed here — soft
+    # spreading is always at least a preference.
+    anti_affinity = optional(string, "soft")
+    # PodDisruptionBudget for this process, guarding availability during
+    # voluntary disruptions (node drains, rollouts). `pdb_enabled` creates the
+    # PDB; `pdb_config` sets the budget (defaults to max_unavailable = "1" in
+    # fabn/workload/kubernetes). Set min_available or max_unavailable, not both.
+    pdb_enabled = optional(bool, false)
+    pdb_config = optional(object({
+      min_available   = optional(string)
+      max_unavailable = optional(string, "1")
+    }))
   }))
 
   validation {
     condition     = length([for k, p in var.formation : k if p.web]) <= 1
     error_message = "At most one formation entry may set web = true."
+  }
+
+  validation {
+    condition     = alltrue([for p in var.formation : contains(["soft", "hard"], p.anti_affinity)])
+    error_message = "anti_affinity must be \"soft\" or \"hard\"."
   }
 }
 

@@ -32,6 +32,10 @@ module "process" {
   node_affinity = each.value.node_affinity
   node_selector = each.value.node_selector
   pod_affinity  = each.value.pod_affinity
+  anti_affinity = each.value.anti_affinity
+
+  pdb_enabled = each.value.pdb_enabled
+  pdb_config  = each.value.pdb_config
 
   cpu_requests    = each.value.cpu_requests
   memory_requests = each.value.memory_requests
