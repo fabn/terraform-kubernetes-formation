@@ -5,7 +5,7 @@
 # in-process metrics exporter reached on the pod IP by autodiscovery checks).
 module "process" {
   source  = "fabn/workload/kubernetes"
-  version = "~> 0.8"
+  version = "~> 0.8.2"
 
   for_each = var.formation
 
@@ -29,10 +29,12 @@ module "process" {
   probe_timeout_seconds           = each.value.probe_timeout_seconds
   probe_failure_threshold         = each.value.probe_failure_threshold
 
-  node_affinity = each.value.node_affinity
-  node_selector = each.value.node_selector
-  pod_affinity  = each.value.pod_affinity
-  anti_affinity = each.value.anti_affinity
+  node_affinity               = each.value.node_affinity
+  node_selector               = each.value.node_selector
+  pod_affinity                = each.value.pod_affinity
+  pod_anti_affinity           = each.value.pod_anti_affinity
+  anti_affinity               = each.value.anti_affinity
+  topology_spread_constraints = each.value.topology_spread_constraints
 
   pdb_enabled = each.value.pdb_enabled
   pdb_config  = each.value.pdb_config

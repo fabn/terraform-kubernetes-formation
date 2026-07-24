@@ -243,7 +243,9 @@ module "app" {
 | `node_affinity` | Node affinity: `required` match expressions (ANDed into one hard term) + `preferred` weighted match expressions. E.g. require spot & non-`t`, prefer `arm64`. | `object({ required, preferred })` | `null` |
 | `node_selector` | Exact-match node selector (label => value) | `map(string)` | `null` |
 | `pod_affinity` | Pod affinity (co-location): `required`/`preferred` terms, each a `topology_key` + label selector. | `object({ required, preferred })` | `null` |
+| `pod_anti_affinity` | Raw pod anti-affinity (spread) rules, same shape as `pod_affinity`. Escape hatch for arbitrary topology keys/selectors; additive to `anti_affinity`. | `object({ required, preferred })` | `null` |
 | `anti_affinity` | Anti-affinity strategy spreading this process's own replicas across nodes: `"soft"` (preferred) or `"hard"` (required, one replica per node). | `string` | `"soft"` |
+| `topology_spread_constraints` | Even pod distribution across topology domains (zones, nodes): list of `{ max_skew, topology_key, when_unsatisfiable, min_domains?, label_selector? }`. | `list(object(...))` | `null` |
 | `pdb_enabled` | Create a PodDisruptionBudget for this process (guards availability during node drains/rollouts). | `bool` | `false` |
 | `pdb_config` | PDB budget: `{ min_available, max_unavailable }` (set one, not both). Applied when `pdb_enabled`. | `object({ min_available, max_unavailable })` | `max_unavailable = "1"` |
 

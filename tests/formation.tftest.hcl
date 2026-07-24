@@ -369,3 +369,50 @@ run "anti_affinity_and_pdb_passthrough" {
     error_message = "anti_affinity = \"hard\" should emit a required pod anti-affinity term"
   }
 }
+
+run "raw_pod_anti_affinity_and_topology_spread_passthrough" {
+  command = plan
+
+  variables {
+    formation = {
+      web = {
+        web   = true
+        ports = { http = 3000 }
+        # Raw spread rule on a custom topology key, additive to the default
+        # "soft" host-level anti-affinity.
+        pod_anti_affinity = {
+          required = [
+            { topology_key = "topology.kubernetes.io/zone", match_labels = { app = "web" } },
+          ]
+        }
+        topology_spread_constraints = [
+          {
+            max_skew           = 1
+            topology_key       = "topology.kubernetes.io/zone"
+            when_unsatisfiable = "DoNotSchedule"
+          },
+        ]
+      }
+    }
+  }
+
+  assert {
+    condition     = module.process["web"].deployment.spec[0].template[0].spec[0].affinity[0].pod_anti_affinity[0].required_during_scheduling_ignored_during_execution[0].topology_key == "topology.kubernetes.io/zone"
+    error_message = "Raw pod_anti_affinity required term should be forwarded verbatim"
+  }
+
+  assert {
+    condition     = module.process["web"].deployment.spec[0].template[0].spec[0].affinity[0].pod_anti_affinity[0].preferred_during_scheduling_ignored_during_execution[0].weight == 1
+    error_message = "Raw pod_anti_affinity should coexist with the soft anti_affinity shorthand"
+  }
+
+  assert {
+    condition     = module.process["web"].deployment.spec[0].template[0].spec[0].topology_spread_constraint[0].max_skew == 1
+    error_message = "topology_spread_constraints should be forwarded"
+  }
+
+  assert {
+    condition     = module.process["web"].deployment.spec[0].template[0].spec[0].topology_spread_constraint[0].when_unsatisfiable == "DoNotSchedule"
+    error_message = "topology_spread_constraints when_unsatisfiable should be forwarded"
+  }
+}
