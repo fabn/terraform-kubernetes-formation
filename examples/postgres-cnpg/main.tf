@@ -31,6 +31,15 @@ module "postgres" {
   instances    = 2
   storage_size = "10Gi"
 
+  # Shutdown timings. The addon already ships drain-friendly defaults
+  # (stop_delay 300s, smart_shutdown_timeout 30s) in place of CloudNativePG's
+  # 1800s/180s, so a node drain or a Spot reclaim is not held up for minutes
+  # (stop_delay becomes the pod terminationGracePeriodSeconds). Shown here for
+  # visibility — drop the block to keep the defaults, or raise stop_delay for a
+  # large database whose shutdown checkpoint legitimately needs more time.
+  stop_delay             = 300
+  smart_shutdown_timeout = 30
+
   # Optional continuous backup + PITR to S3, keyless: with no
   # credentials_secret_name the barman-cloud plugin writes with the instance
   # pods' ambient IAM identity (inheritFromIAMRole), so pair the Cluster's

@@ -87,6 +87,12 @@ resource "kubernetes_manifest" "cluster" {
         # Operator-managed PodDisruptionBudgets (separate primary/replica).
         enablePDB = var.enable_pdb
 
+        # Graceful-shutdown budget. stopDelay is also copied onto the pod's
+        # terminationGracePeriodSeconds by the operator; smartShutdownTimeout is
+        # the slice of it spent waiting for connections before a fast shutdown.
+        stopDelay            = var.stop_delay
+        smartShutdownTimeout = var.smart_shutdown_timeout
+
         affinity = merge(
           {
             enablePodAntiAffinity = var.enable_pod_anti_affinity
@@ -107,6 +113,9 @@ resource "kubernetes_manifest" "cluster" {
       },
       var.image_name != null ? { imageName = var.image_name } : {},
       var.priority_class_name != null ? { priorityClassName = var.priority_class_name } : {},
+      var.switchover_delay != null ? { switchoverDelay = var.switchover_delay } : {},
+      var.start_delay != null ? { startDelay = var.start_delay } : {},
+      var.failover_delay != null ? { failoverDelay = var.failover_delay } : {},
       # Both keys must be present (null when empty): kubernetes_manifest types
       # inheritedMetadata as object({labels, annotations}) from the CRD schema,
       # so a partial object like {labels = ...} fails to transform.
