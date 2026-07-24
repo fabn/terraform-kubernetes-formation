@@ -320,6 +320,15 @@ exposes `switchover_delay`, `start_delay` and `failover_delay` as opt-in
 passthroughs (`null` ⇒ operator default). Raise `stop_delay` for a large
 database whose shutdown checkpoint legitimately needs more time.
 
+**Scheduling.** Place the instance pods with `node_selector` (exact-match
+labels), `node_affinity` (set-based `required` + `preferred` match expressions,
+same shape as a web process), and `tolerations`; spread them with
+`enable_pod_anti_affinity` / `pod_anti_affinity_type` / `topology_key`. A common
+production pin is `node_affinity = { required = [{ key =
+"karpenter.sh/capacity-type", operator = "In", values = ["on-demand"] }] }` — keep
+the primary off Spot so a node reclaim can't force a failover — optionally with a
+`preferred` `arm64` term.
+
 Reference: [CloudNativePG](https://github.com/cloudnative-pg/cloudnative-pg)
 operator ([Cluster CRD](https://cloudnative-pg.io/docs/1.30/cloudnative-pg.v1)),
 [barman-cloud plugin](https://github.com/cloudnative-pg/plugin-barman-cloud).

@@ -343,3 +343,70 @@ run "cnpg_rejects_bad_anti_affinity" {
 
   expect_failures = [var.pod_anti_affinity_type]
 }
+
+# node_affinity is absent from the rendered Cluster unless set.
+run "cnpg_no_node_affinity_by_default" {
+  command = apply
+
+  module {
+    source = "./modules/postgres-cnpg"
+  }
+
+  variables {
+    namespace = "addon-test"
+    database  = "myapp"
+    username  = "myapp"
+  }
+
+  assert {
+    condition     = !can(kubernetes_manifest.cluster.manifest.spec.affinity.nodeAffinity)
+    error_message = "nodeAffinity should be omitted when node_affinity is not set"
+  }
+}
+
+# Required + preferred node_affinity renders into spec.affinity.nodeAffinity.
+run "cnpg_renders_node_affinity" {
+  command = apply
+
+  module {
+    source = "./modules/postgres-cnpg"
+  }
+
+  variables {
+    namespace = "addon-test"
+    database  = "myapp"
+    username  = "myapp"
+    node_affinity = {
+      required  = [{ key = "karpenter.sh/capacity-type", operator = "In", values = ["on-demand"] }]
+      preferred = [{ weight = 100, key = "kubernetes.io/arch", operator = "In", values = ["arm64"] }]
+    }
+  }
+
+  assert {
+    condition     = kubernetes_manifest.cluster.manifest.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].key == "karpenter.sh/capacity-type"
+    error_message = "required node affinity should render into a hard node-selector term"
+  }
+
+  assert {
+    condition     = kubernetes_manifest.cluster.manifest.spec.affinity.nodeAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].weight == 100 && kubernetes_manifest.cluster.manifest.spec.affinity.nodeAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].preference.matchExpressions[0].key == "kubernetes.io/arch"
+    error_message = "preferred node affinity should render as a weighted term"
+  }
+}
+
+# Invalid node_affinity operator is rejected.
+run "cnpg_rejects_bad_node_affinity_operator" {
+  command = plan
+
+  module {
+    source = "./modules/postgres-cnpg"
+  }
+
+  variables {
+    namespace     = "addon-test"
+    database      = "myapp"
+    username      = "myapp"
+    node_affinity = { required = [{ key = "x", operator = "Banana", values = [] }] }
+  }
+
+  expect_failures = [var.node_affinity]
+}

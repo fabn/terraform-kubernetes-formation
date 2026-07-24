@@ -38,6 +38,40 @@ locals {
       var.cpu_limits != null ? { cpu = var.cpu_limits } : {},
     )
   }
+
+  # Set-based node affinity rendered into the Cluster's spec.affinity.nodeAffinity
+  # (a corev1.NodeAffinity). `required` expressions are ANDed into one hard
+  # node-selector term; `preferred` become soft/weighted terms. Emitted only when
+  # at least one term is given, so the affinity block stays clean otherwise.
+  na_required  = try(var.node_affinity.required, [])
+  na_preferred = try(var.node_affinity.preferred, [])
+  node_affinity = length(local.na_required) + length(local.na_preferred) == 0 ? {} : {
+    nodeAffinity = merge(
+      length(local.na_required) > 0 ? {
+        requiredDuringSchedulingIgnoredDuringExecution = {
+          nodeSelectorTerms = [{
+            matchExpressions = [for e in local.na_required : {
+              key      = e.key
+              operator = e.operator
+              values   = e.values
+            }]
+          }]
+        }
+      } : {},
+      length(local.na_preferred) > 0 ? {
+        preferredDuringSchedulingIgnoredDuringExecution = [for p in local.na_preferred : {
+          weight = p.weight
+          preference = {
+            matchExpressions = [{
+              key      = p.key
+              operator = p.operator
+              values   = p.values
+            }]
+          }
+        }]
+      } : {},
+    )
+  }
 }
 
 resource "random_password" "app" {
@@ -99,6 +133,7 @@ resource "kubernetes_manifest" "cluster" {
             podAntiAffinityType   = var.pod_anti_affinity_type
             topologyKey           = var.topology_key
           },
+          local.node_affinity,
           length(var.node_selector) > 0 ? { nodeSelector = var.node_selector } : {},
           length(var.tolerations) > 0 ? { tolerations = var.tolerations } : {},
         )
