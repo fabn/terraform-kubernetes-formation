@@ -44,11 +44,15 @@ run "postgres_cnpg" {
   }
 
   variables {
-    namespace      = run.namespace.name
-    name           = "e2e-cnpg"
-    database       = "myapp"
-    username       = "myapp"
-    storage_size   = "1Gi"
+    namespace    = run.namespace.name
+    name         = "e2e-cnpg"
+    database     = "myapp"
+    username     = "myapp"
+    storage_size = "1Gi"
+    # part_of populates spec.inheritedMetadata.labels while annotations stay
+    # empty — the exact shape that used to leave a perpetual
+    # `spec.inheritedMetadata.annotations = (known after apply)` diff (#32).
+    part_of        = "e2e"
     wait_for_ready = true
   }
 
@@ -65,5 +69,37 @@ run "postgres_cnpg" {
   assert {
     condition     = endswith(output.sensitive_env.DATABASE_URL, "@e2e-cnpg-rw:5432/myapp")
     error_message = "DATABASE_URL should target the deployed -rw host / database"
+  }
+}
+
+# Step 4: idempotency guard (#32). Re-plan the *same* Cluster against the live
+# state. A perpetual diff (e.g. the operator normalising away a null
+# spec.inheritedMetadata.annotations we sent) would plan an update and mark the
+# resource's computed `object` "known after apply", so the assertion below can't
+# evaluate and the run fails. A clean plan keeps `object` known → this passes
+# only when the addon is idempotent.
+run "postgres_cnpg_idempotent" {
+  command = plan
+
+  module {
+    source = "../modules/postgres-cnpg"
+  }
+
+  variables {
+    namespace      = run.namespace.name
+    name           = "e2e-cnpg"
+    database       = "myapp"
+    username       = "myapp"
+    storage_size   = "1Gi"
+    part_of        = "e2e"
+    wait_for_ready = true
+  }
+
+  # On a perpetual diff the re-plan marks this exact field "known after apply",
+  # so the condition can't evaluate and the run fails; a clean plan keeps it a
+  # concrete (empty) map. This is the field that used to drift (#32).
+  assert {
+    condition     = length(kubernetes_manifest.cluster.object.spec.inheritedMetadata.annotations) == 0
+    error_message = "postgres-cnpg is not idempotent: a re-plan still changes spec.inheritedMetadata.annotations (perpetual diff, #32)"
   }
 }
