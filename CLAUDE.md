@@ -35,13 +35,22 @@ live Deployment while the image and command stay explicit inputs.
   - one **version** label — `major` / `minor` / `patch`. There is no default at
     review time: an unlabelled PR silently resolves to `patch`, which is wrong
     for anything that adds an input or an addon. New inputs/modules ⇒ `minor`.
-  - one **category** label — `enhancement` (or `feature`), `bug` (`fix`,
-    `bugfix`), `chore`, `dependencies`. First matching category wins, so don't
-    stack two: a feature PR labelled `chore` lands in the wrong section.
-  - The autolabeler only guesses from paths and branch/title patterns (`*.md` ⇒
-    `chore`, `fix/*` or a title matching `/fix/i` ⇒ `bug`, `feature/*` ⇒
-    `enhancement`), so a docs-touching feature PR arrives mislabelled — fix it
-    by hand rather than trusting it.
+  - **exactly one category** label — `enhancement` (or `feature`), `bug` (`fix`,
+    `bugfix`), `documentation` (`docs`), `dependencies`, `chore`. A PR is listed
+    under **every** category it matches, so two category labels means the same
+    entry printed twice in the release notes. Pick by what the change *is*:
+    `documentation` for docs-only work, `chore` for what touches neither the
+    module's contract nor its docs (workflow/tooling bumps, repo config,
+    test-only work), the contract categories otherwise — a feature that also
+    updates its README is still `enhancement`.
+  - The autolabeler guesses from branch and title patterns only (`docs/*` ⇒
+    `documentation`, `chore/*` ⇒ `chore`, `fix/*` or a title matching `/fix/i` ⇒
+    `bug`, `feature/*` ⇒ `enhancement`) — author intent, not an inference from
+    the diff. It deliberately has no `files:` rule: a `*.md` ⇒ `chore` rule used
+    to fire on any PR touching a README, which with per-module READMEs is nearly
+    every feature PR, and the second category duplicated it in the notes. Still
+    check the labels by hand before merging; a mismatched branch name is enough
+    to mislabel.
 - **Dependabot PRs** arrive with `dependencies` only (set in
   `.github/dependabot.yml`), so they resolve to the default `patch`. That is
   correct for an ordinary provider/chart bump, but **add a version label by hand**
