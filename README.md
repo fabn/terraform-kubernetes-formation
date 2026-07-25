@@ -362,6 +362,20 @@ operator installed cluster-wide.
 - `env`: `REDIS_URL` (auth off)
 - `sensitive_env`: `REDIS_URL` (auth on — the URL then carries the password)
 
+**Scheduling.** Place the instance pods with `node_selector` (exact-match
+labels), `node_affinity` (set-based `required` + `preferred` match expressions,
+same shape as a web process and as the postgres-cnpg addon), and `tolerations`;
+spread them with `topology_spread_constraints`. Keeping the master off Spot is
+worth more here than for a database — a node reclaim costs a failover and, with
+no `snapshot`, the whole dataset:
+
+```hcl
+node_affinity = {
+  required  = [{ key = "karpenter.sh/capacity-type", operator = "In", values = ["on-demand"] }]
+  preferred = [{ weight = 100, key = "kubernetes.io/arch", operator = "In", values = ["arm64"] }]
+}
+```
+
 Reference: [Dragonfly operator](https://github.com/dragonflydb/dragonfly-operator)
 ([Dragonfly CRD](https://www.dragonflydb.io/docs/managing-dragonfly/operator/dragonfly-configuration)).
 
