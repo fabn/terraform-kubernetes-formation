@@ -65,6 +65,13 @@ live Deployment while the image and command stay explicit inputs.
   surface, caveats, a usage example. The root `README.md` stays a TL;DR — a
   one-line-per-addon table linking out — so module docs live next to the code
   they describe and the root file doesn't drift.
+- **An HA-capable submodule's README carries a `#### Production block`**: every
+  knob a production deployment sets, as one copy-pasteable HCL block, then two
+  short lists — what is already right by default (so its absence from the block is
+  deliberate) and what is left undefaulted because it needs cluster knowledge (a
+  zone label key, a capacity-type label, a bucket). Defaults stay dev-cluster-safe;
+  this is where the production opinion lives, instead of a `production_mode` flag
+  that would add a second configuration axis to every module (see #41).
 
 ### HA & placement surface
 

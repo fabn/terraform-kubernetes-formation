@@ -90,15 +90,48 @@ See also [`examples/dragonfly`](../../examples/dragonfly).
 | `topology_spread_constraints` | `[]` | Spread master/replica across nodes or zones |
 | `pod_disruption_budget` | `null` | Override the PDB the operator creates on its own (`spec.pdb`): exactly one of `min_available` / `max_unavailable`, absolute (`"1"`) or percentage (`"50%"`) |
 
-Keeping the master off Spot is worth more here than for a database: a node reclaim
-costs a failover and, with no `snapshot`, the whole dataset.
+#### Production block
+
+The defaults are tuned for a stack that also has to run on a single-node dev
+cluster, so production needs an explicit block. This is it, whole — paste it and
+adjust. Which one you want depends on what the instance *is*: a queue/state store
+(below) or a disposable cache, where `replicas = 1` + `cache_mode = true` is the
+right production answer and none of this applies.
 
 ```hcl
+replicas = 2 # default, but it is what makes failover possible
+
+# Hard spread per node: the operator sets no anti-affinity, so spreading is
+# entirely up to these constraints.
+topology_spread_constraints = [{
+  maxSkew           = 1
+  topologyKey       = "kubernetes.io/hostname"
+  whenUnsatisfiable = "DoNotSchedule" # ScheduleAnyway on a single-node cluster
+  }, {
+  maxSkew           = 1
+  topologyKey       = "topology.kubernetes.io/zone"
+  whenUnsatisfiable = "ScheduleAnyway"
+}]
+
+# Keeping the master off Spot is worth more here than for a database: a reclaim
+# costs a failover and, with no snapshot, the whole dataset.
 node_affinity = {
   required  = [{ key = "karpenter.sh/capacity-type", operator = "In", values = ["on-demand"] }]
   preferred = [{ weight = 100, key = "kubernetes.io/arch", operator = "In", values = ["arm64"] }]
 }
+
+# Persistence, keyless to S3 via Pod Identity / IRSA. A cache leaves this null.
+service_account_name = "myapp-dragonfly"
+snapshot             = { s3_uri = "s3://acme-backups/myapp/dragonfly" }
 ```
+
+Already right by default, so absent above: the disruption budget (the operator
+creates one, `maxUnavailable = 1`) and `auth`. Deliberately not defaulted, because
+each needs something only you know: `DoNotSchedule` leaves the replica `Pending` on
+a single node, the zone label key exists only on a multi-zone cluster,
+`karpenter.sh/capacity-type` assumes Karpenter, and the snapshot needs a bucket.
+Size the instance (`memory_mib`, `threads`) separately — placement says nothing
+about capacity.
 
 `node_affinity` is rendered into the CR's `spec.affinity`, which the operator
 copies verbatim onto the StatefulSet pod template; the operator sets no affinity of

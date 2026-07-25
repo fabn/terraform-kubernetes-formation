@@ -101,21 +101,45 @@ the CRD schema and requires every attribute, the same constraint that applies to
 [`postgres-cnpg`](../postgres-cnpg)'s `inheritedMetadata` — and the API server
 treats that null as an absent key.
 
-Keep the primary off Spot — a reclaim forces a failover and a write blip — and
-spread the instances across zones:
+#### Production block
+
+The defaults are tuned for a stack that also has to run on a single-node dev
+cluster, so production needs an explicit block. This is it, whole — paste it and
+adjust:
 
 ```hcl
+replicas      = 2    # >= 2, or there is nothing to fail over to
+auto_failover = true # default, but it is the point of running HA
+anti_affinity = true # hard per-node spread; needs >= replicas nodes
+
+# Zone spread on top: anti_affinity only spreads per node.
+topology_spread_constraints = [{
+  maxSkew           = 1
+  topologyKey       = "topology.kubernetes.io/zone"
+  whenUnsatisfiable = "ScheduleAnyway" # DoNotSchedule once every zone has capacity
+}]
+
+# Keep the primary off Spot: a reclaim forces a failover and a write blip.
 node_affinity = {
   required  = [{ key = "karpenter.sh/capacity-type", operator = "In", values = ["on-demand"] }]
   preferred = [{ weight = 100, key = "kubernetes.io/arch", operator = "In", values = ["arm64"] }]
 }
 
-topology_spread_constraints = [{
-  maxSkew           = 1
-  topologyKey       = "topology.kubernetes.io/zone"
-  whenUnsatisfiable = "ScheduleAnyway"
-}]
+# Scheduled physical backups, keyless via Pod Identity / IRSA.
+service_account_name = "myapp-mariadb"
+backup = {
+  bucket = "acme-backups"
+  prefix = "myapp-production"
+  region = "eu-west-1"
+}
 ```
+
+Already right by default, so absent above: the disruption budget (created for you
+above one replica). Deliberately not defaulted, because each needs something only
+you know: `anti_affinity` leaves replicas `Pending` on a single node, the zone label
+key exists only on a multi-zone cluster, `karpenter.sh/capacity-type` assumes
+Karpenter, and the backup needs a bucket. Size the instances (`storage_size`,
+`memory_limits`, …) separately — placement says nothing about capacity.
 
 ### Backup
 

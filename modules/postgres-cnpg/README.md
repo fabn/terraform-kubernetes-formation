@@ -78,26 +78,45 @@ See also [`examples/postgres-cnpg`](../../examples/postgres-cnpg).
 | `tolerations` | `[]` | e.g. the `dedicated=database:NoSchedule` taint on a DB node pool |
 | `priority_class_name` | `null` | PriorityClass for the instance pods |
 
-A common production pin, on top of the anti-affinity defaults, keeps the primary
-on on-demand capacity and optionally prefers arm64:
+#### Production block
+
+The defaults are tuned for a stack that also has to run on a single-node dev
+cluster, so production needs an explicit block. This is it, whole — paste it and
+adjust:
 
 ```hcl
-node_affinity = {
-  required  = [{ key = "karpenter.sh/capacity-type", operator = "In", values = ["on-demand"] }]
-  preferred = [{ weight = 100, key = "kubernetes.io/arch", operator = "In", values = ["arm64"] }]
-}
-```
+instances = 2 # >= 2, or there is nothing to fail over to
 
-On a multi-zone cluster, pair the per-node anti-affinity with a zone spread —
-`enable_pod_anti_affinity` only spreads on one topology key at a time:
+# Hard spread per node: `preferred` is the default because it fits single-node.
+enable_pod_anti_affinity = true
+pod_anti_affinity_type   = "required"
+topology_key             = "kubernetes.io/hostname"
 
-```hcl
+# Zone spread on top, since the anti-affinity above spreads on one key only.
 topology_spread_constraints = [{
   maxSkew           = 1
   topologyKey       = "topology.kubernetes.io/zone"
   whenUnsatisfiable = "ScheduleAnyway" # DoNotSchedule once every zone has capacity
 }]
+
+# Keep the primary off Spot: a reclaim costs a failover and a write blip.
+node_affinity = {
+  required  = [{ key = "karpenter.sh/capacity-type", operator = "In", values = ["on-demand"] }]
+  preferred = [{ weight = 100, key = "kubernetes.io/arch", operator = "In", values = ["arm64"] }]
+}
+
+# Continuous backup + PITR. Keyless via Pod Identity / IRSA.
+backup = {
+  destination_path = "s3://acme-backups/myapp-production"
+  retention_policy = "30d"
+}
 ```
+
+Already right by default, so absent above: `enable_pdb` (the operator manages the
+PDBs). Deliberately not defaulted, because each needs something only you know: the
+zone label key exists only on a multi-zone cluster, `karpenter.sh/capacity-type`
+assumes Karpenter, and the backup needs a bucket. Size the instances (`storage_size`,
+`memory_limits`, …) separately — placement says nothing about capacity.
 
 ### Shutdown / lifecycle timings
 
