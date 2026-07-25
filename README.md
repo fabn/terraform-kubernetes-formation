@@ -303,6 +303,14 @@ Compose the chart-based ones behind one sized map with the
 [`addons` wrapper](#addons-behind-one-map-modulesaddons), or use any of them
 individually.
 
+Addon defaults are tuned to also run on a single-node dev cluster, so each
+HA-capable addon's README carries a **Production block**: the whole set of knobs a
+production deployment sets, in one paste, plus what is deliberately left undefaulted
+because it depends on the cluster (zone labels, capacity-type labels, a backup
+bucket) — see [postgres-cnpg](modules/postgres-cnpg#production-block),
+[mariadb](modules/mariadb#production-block),
+[dragonfly](modules/dragonfly#production-block).
+
 Managed cloud equivalents (Aurora, ElastiCache, …) live in the companion
 [`fabn/addons/aws`](https://registry.terraform.io/modules/fabn/addons/aws), which
 exposes the same contract so a stack swaps in-cluster for managed by switching
