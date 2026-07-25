@@ -51,6 +51,21 @@ run "mariadb" {
     storage_size         = "1Gi"
     service_account_name = "e2e-mariadb"
     wait_for_ready       = true
+
+    # Placement is exercised here because the mocked unit tests can't: the manifest
+    # is sent as-is, so a field the CRD doesn't define only fails against a real
+    # API server. nodeAffinity shares spec.affinity with the operator's own
+    # antiAffinityEnabled shorthand, which is what makes the merge worth checking
+    # for real. Both terms are satisfiable on single-node Kind.
+    node_affinity = {
+      required  = [{ key = "kubernetes.io/os", operator = "In", values = ["linux"] }]
+      preferred = [{ weight = 100, key = "kubernetes.io/arch", operator = "In", values = ["amd64", "arm64"] }]
+    }
+    topology_spread_constraints = [{
+      maxSkew           = 1
+      topologyKey       = "kubernetes.io/hostname"
+      whenUnsatisfiable = "ScheduleAnyway" # single node: DoNotSchedule would pin a replica Pending
+    }]
   }
 
   assert {
@@ -61,6 +76,17 @@ run "mariadb" {
   assert {
     condition     = endswith(nonsensitive(output.sensitive_env.DATABASE_URL), "@e2e-mariadb:3306/myapp")
     error_message = "DATABASE_URL should target the deployed host / database"
+  }
+
+  # Read back from the API server: the MariaDB stored the placement as sent.
+  assert {
+    condition     = kubernetes_manifest.mariadb.object.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].key == "kubernetes.io/os"
+    error_message = "the stored MariaDB should carry the required node affinity term"
+  }
+
+  assert {
+    condition     = kubernetes_manifest.mariadb.object.spec.topologySpreadConstraints[0].topologyKey == "kubernetes.io/hostname"
+    error_message = "the stored MariaDB should carry the topology spread constraint"
   }
 }
 
