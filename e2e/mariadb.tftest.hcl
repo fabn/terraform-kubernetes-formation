@@ -66,6 +66,11 @@ run "mariadb" {
       topologyKey       = "kubernetes.io/hostname"
       whenUnsatisfiable = "ScheduleAnyway" # single node: DoNotSchedule would pin a replica Pending
     }]
+    # An explicit budget, because this instance is standalone (which gets none by
+    # default). What matters here is that the object transforms and is accepted:
+    # spec.podDisruptionBudget has the same two-key shape that broke dragonfly's
+    # spec.pdb in #38, and mocked tests cannot catch that.
+    pod_disruption_budget = { max_unavailable = "1" }
   }
 
   assert {
@@ -87,6 +92,11 @@ run "mariadb" {
   assert {
     condition     = kubernetes_manifest.mariadb.object.spec.topologySpreadConstraints[0].topologyKey == "kubernetes.io/hostname"
     error_message = "the stored MariaDB should carry the topology spread constraint"
+  }
+
+  assert {
+    condition     = tostring(kubernetes_manifest.mariadb.object.spec.podDisruptionBudget.maxUnavailable) == "1"
+    error_message = "the stored MariaDB should carry the disruption budget"
   }
 }
 

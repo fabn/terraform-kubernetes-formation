@@ -38,6 +38,24 @@ locals {
     )
   }
 
+  # spec.podDisruptionBudget. The operator manages none, so this module creates one
+  # for an HA instance by default (maxUnavailable = 1) and none for a standalone
+  # server, where a single-pod minAvailable = 1 would block every node drain. An
+  # explicit budget wins, replica count included.
+  #
+  # Both keys are always sent even though only one may carry a value: as with
+  # dragonfly's spec.pdb (#38) and postgres-cnpg's inheritedMetadata (#24),
+  # kubernetes_manifest types the object from the CRD schema and requires every
+  # attribute, so a single-key object fails to transform ("required attribute
+  # maxUnavailable not set"). The API server treats the null as an absent key.
+  pdb_enabled = var.pod_disruption_budget != null || (var.enable_pdb && local.is_ha)
+  pdb = !local.pdb_enabled ? null : {
+    minAvailable = try(var.pod_disruption_budget.min_available, null)
+    maxUnavailable = try(var.pod_disruption_budget.max_unavailable, null) != null ? var.pod_disruption_budget.max_unavailable : (
+      try(var.pod_disruption_budget.min_available, null) != null ? null : "1"
+    )
+  }
+
   # spec.affinity is an AffinityConfig: the operator's own antiAffinityEnabled
   # shorthand plus a standard corev1 nodeAffinity. Both live under the same key,
   # so they are merged into one object and the key is emitted only when at least
@@ -194,7 +212,7 @@ resource "kubernetes_manifest" "mariadb" {
       var.image != null ? { image = var.image } : {},
       var.service_account_name != null ? { serviceAccountName = var.service_account_name } : {},
       length(local.affinity) > 0 ? { affinity = local.affinity } : {},
-      var.pod_disruption_budget != null ? { podDisruptionBudget = var.pod_disruption_budget } : {},
+      local.pdb != null ? { podDisruptionBudget = local.pdb } : {},
       length(var.node_selector) > 0 ? { nodeSelector = var.node_selector } : {},
       length(var.tolerations) > 0 ? { tolerations = var.tolerations } : {},
       length(var.topology_spread_constraints) > 0 ? { topologySpreadConstraints = var.topology_spread_constraints } : {},

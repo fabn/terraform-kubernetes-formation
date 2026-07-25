@@ -72,7 +72,8 @@ See also [`examples/mariadb`](../../examples/mariadb).
 
 | Name | Default | Description |
 | --- | --- | --- |
-| `pod_disruption_budget` | `null` | Passed verbatim to `spec.podDisruptionBudget` — the operator manages none automatically, e.g. `{ minAvailable = "50%" }` |
+| `enable_pdb` | `true` | Create a PodDisruptionBudget when `replicas > 1` (the operator manages none itself). `false` opts out on dev clusters |
+| `pod_disruption_budget` | `null` | Override the default budget: exactly one of `min_available` / `max_unavailable`, absolute (`"1"`) or percentage (`"50%"`). An explicit budget is honoured on a standalone instance too |
 | `anti_affinity` | `false` | Require instances to spread across nodes (true HA). Leave false on single-node clusters, or replicas stay `Pending` |
 | `node_affinity` | `null` | Set-based placement: `required` + `preferred` match expressions, same shape as a formation web process. Rendered into `spec.affinity.nodeAffinity`, alongside `anti_affinity` rather than instead of it |
 | `topology_spread_constraints` | `[]` | Passed verbatim to `spec.topologySpreadConstraints` (k8s camelCase). Spreads across zones with an explicit skew and a soft/hard `whenUnsatisfiable`, where `anti_affinity` only offers hard per-node spreading |
@@ -80,8 +81,25 @@ See also [`examples/mariadb`](../../examples/mariadb).
 | `tolerations` | `[]` | e.g. the `dedicated=database:NoSchedule` taint on a DB node pool |
 | `priority_class_name` | `null` | PriorityClass for the instance pods |
 
-Set `pod_disruption_budget` on any multi-replica deployment: without one, a node
-drain can take the primary and a replica at the same time.
+**Disruption budget.** mariadb-operator manages no PodDisruptionBudget of its own,
+and this module defaults to `replicas = 2` — so without one a node drain could take
+the primary and its replica at once. An HA instance therefore gets a budget by
+default (`maxUnavailable = 1`, the same choice the Dragonfly operator makes above
+one replica); a standalone instance gets none, because a single-pod
+`minAvailable = 1` blocks every drain forever. `enable_pdb = false` opts out,
+`pod_disruption_budget` reshapes it:
+
+```hcl
+replicas              = 3
+pod_disruption_budget = { min_available = "2" }
+```
+
+Exactly one of the two keys may be set, validated at plan time. Both still reach
+the manifest, the unused one as `null` — `kubernetes_manifest` types the object from
+the CRD schema and requires every attribute, the same constraint that applies to
+[`dragonfly`](../dragonfly)'s `spec.pdb` and
+[`postgres-cnpg`](../postgres-cnpg)'s `inheritedMetadata` — and the API server
+treats that null as an absent key.
 
 Keep the primary off Spot — a reclaim forces a failover and a write blip — and
 spread the instances across zones:
