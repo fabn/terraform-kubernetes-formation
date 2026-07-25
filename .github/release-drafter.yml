@@ -10,10 +10,16 @@ categories:
       - 'fix'
       - 'bugfix'
       - 'bug'
-  - title: '🛠️ Maintenance'
-    label: 'chore'
+  - title: '📚 Documentation'
+    labels:
+      - 'documentation'
+      - 'docs'
   - title: '🤖 Dependencies'
     label: 'dependencies'
+  # Everything that is neither a change to the module's contract nor to its docs:
+  # workflow/tooling bumps, repo config, test-only work.
+  - title: '🛠️ Maintenance'
+    label: 'chore'
 change-template: '- $TITLE @$AUTHOR (#$NUMBER)'
 change-title-escapes: '\<*_&'
 exclude-labels:
@@ -33,12 +39,18 @@ template: |
   ## Changes
 
   $CHANGES
+# Branch and title patterns only — deliberately no `files:` rule. A path-based
+# guess mislabels by construction here: every submodule carries its own README
+# (see CLAUDE.md), so a `files: ['*.md']` => chore rule fired on ordinary feature
+# PRs and, because a PR is listed under *every* matching category, made them
+# appear twice in the release notes. Branch/title patterns are author intent, not
+# an inference from the diff.
 autolabeler:
-  - label: 'chore'
-    files:
-      - '*.md'
+  - label: 'documentation'
     branch:
       - '/docs{0,1}\/.+/'
+  - label: 'chore'
+    branch:
       - '/chore\/.+/'
   - label: 'bug'
     branch:
