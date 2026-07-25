@@ -433,9 +433,12 @@ run "dragonfly_renders_pdb_min_available" {
     error_message = "min_available should render as spec.pdb.minAvailable"
   }
 
+  # Both keys are sent because kubernetes_manifest requires every attribute of a
+  # CRD-derived object (#24); the unused one is null, which the API server treats
+  # as absent, so the CRD's mutual-exclusion rule stays satisfied.
   assert {
-    condition     = !can(kubernetes_manifest.dragonfly.manifest.spec.pdb.maxUnavailable)
-    error_message = "the unset PDB key must not be sent (the CRD rejects both keys together)"
+    condition     = kubernetes_manifest.dragonfly.manifest.spec.pdb.maxUnavailable == null
+    error_message = "the unset PDB key must be sent as null, not omitted (the provider requires every object attribute)"
   }
 }
 
@@ -457,8 +460,8 @@ run "dragonfly_renders_pdb_max_unavailable" {
   }
 
   assert {
-    condition     = !can(kubernetes_manifest.dragonfly.manifest.spec.pdb.minAvailable)
-    error_message = "the unset PDB key must not be sent (the CRD rejects both keys together)"
+    condition     = kubernetes_manifest.dragonfly.manifest.spec.pdb.minAvailable == null
+    error_message = "the unset PDB key must be sent as null, not omitted (the provider requires every object attribute)"
   }
 }
 

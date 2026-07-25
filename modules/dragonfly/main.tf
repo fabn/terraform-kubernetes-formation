@@ -88,13 +88,17 @@ locals {
   }
 
   # spec.pdb, customising the PodDisruptionBudget the operator creates on its own
-  # for a multi-replica instance. Exactly one key reaches the CR (the CRD rejects
-  # both), so the unset one is dropped rather than sent as null.
-  pdb = var.pod_disruption_budget == null ? null : (
-    var.pod_disruption_budget.min_available != null
-    ? { minAvailable = var.pod_disruption_budget.min_available }
-    : { maxUnavailable = var.pod_disruption_budget.max_unavailable }
-  )
+  # for a multi-replica instance. Both keys must be present even though the CRD
+  # accepts only one of them: kubernetes_manifest types the object from the CRD
+  # schema and requires every attribute ("required attribute maxUnavailable not
+  # set" otherwise), the same constraint that forces both inheritedMetadata keys
+  # in postgres-cnpg (#24). The unused one is therefore sent as null — validation
+  # guarantees exactly one is non-null — and the API server treats a null the way
+  # it treats an absent key, so the CRD's mutual-exclusion rule stays satisfied.
+  pdb = var.pod_disruption_budget == null ? null : {
+    minAvailable   = var.pod_disruption_budget.min_available
+    maxUnavailable = var.pod_disruption_budget.max_unavailable
+  }
 
   snapshot = var.snapshot == null ? null : merge(
     { cron = var.snapshot.cron },
