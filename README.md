@@ -175,7 +175,8 @@ module "app" {
 `size` picks a preset (`mini` | `small` | `medium` | `large`, default `mini`);
 any explicit knob (`storage_size`, `max_memory`, `cpu_requests`, …) overrides
 the preset for that field. For knobs the wrapper does not surface, use the
-individual submodules directly (they stay usable on their own).
+individual submodules directly (they stay usable on their own). Preset sizings
+and the full map shape: [`modules/addons`](modules/addons).
 
 ### Behind an AWS ALB (EKS Auto Mode / AWS Load Balancer Controller)
 
@@ -280,146 +281,40 @@ module "app" {
 
 ## Addon submodules
 
-Uniform contract: inputs `namespace`/`name` (+ service specifics), outputs
-`env` (plaintext) and `sensitive_env` (credentials). Compose them behind one
-map with the [`addons` wrapper](#addons-behind-one-map-modulesaddons), or use
-them individually.
+Backing services are independent submodules with a uniform contract: inputs
+`namespace`/`name` (+ service specifics), outputs `env` (plaintext config) and
+`sensitive_env` (credentials) that the caller merges into the stack, Heroku-addon
+style. New services are new addon modules, never new toggles in the core.
 
-### postgres
+Each submodule documents itself — inputs, HA/placement surface, caveats — in its
+own README; the table below is the TL;DR for picking one.
 
-Bitnami PostgreSQL chart, standalone architecture. The password is generated
-per instance and stays in TF state + the auth Secret.
+| Addon | What it is | `env` | `sensitive_env` | HA |
+| --- | --- | --- | --- | --- |
+| [`postgres`](modules/postgres) | Bitnami PostgreSQL chart, standalone | `PGHOST`, `PGPORT`, `PGUSER`, `PGDATABASE` | `DATABASE_URL`, `PGPASSWORD` | — |
+| [`postgres-cnpg`](modules/postgres-cnpg) | CloudNativePG `Cluster`: primary + replicas, failover, PITR to S3. Drop-in swap for `postgres` (host is `<name>-rw`) | same | same | PDB, anti-affinity, node affinity |
+| [`mariadb`](modules/mariadb) | mariadb-operator `MariaDB`: standalone or primary + replicas with failover, S3 backups, adoption from a dump | `MYSQL_HOST`, `MYSQL_PORT`, `MYSQL_USER`, `MYSQL_DATABASE` | `DATABASE_URL`, `MYSQL_PWD` | PDB, anti-affinity |
+| [`redis`](modules/redis) | Bitnami Redis chart, standalone, no auth, AOF + `noeviction` | `REDIS_URL` | — | — |
+| [`dragonfly`](modules/dragonfly) | Operator-backed Dragonfly: master + replica with failover, optional auth, S3 snapshots, cache mode. Drop-in swap for `redis` | `REDIS_URL` (auth off) | `REDIS_URL` (auth on) | replicas, topology spread, node affinity |
+| [`memcached`](modules/memcached) | Plain memcached, deliberately ephemeral (no PVC) | `MEMCACHED_SERVERS` | — | — |
 
-- `env`: `PGHOST`, `PGPORT`, `PGUSER`, `PGDATABASE` (lets `psql` inside the
-  pod connect with no args)
-- `sensitive_env`: `DATABASE_URL`, `PGPASSWORD`
+The operator-backed addons require their operator installed cluster-wide.
+Compose the chart-based ones behind one sized map with the
+[`addons` wrapper](#addons-behind-one-map-modulesaddons), or use any of them
+individually.
 
-### postgres-cnpg
-
-CloudNativePG operator Cluster — a drop-in swap for `postgres` (identical env
-contract; only the host differs, the operator serves the primary on
-`<name>-rw`). Primary + optional replicas with operator-managed failover, a
-per-instance generated password in TF state + the auth Secret, and optional
-continuous backup + PITR to S3 via the barman-cloud plugin (keyless with
-`inheritFromIAMRole` on EKS Pod Identity / IRSA). Requires the CloudNativePG
-operator (and, for backups, the barman-cloud plugin) installed cluster-wide.
-
-- `env`: `PGHOST` (the operator's `<name>-rw` Service), `PGPORT`, `PGUSER`,
-  `PGDATABASE`
-- `sensitive_env`: `DATABASE_URL`, `PGPASSWORD`
-
-**Shutdown / lifecycle timings.** CloudNativePG's stock shutdown budget
-(`stopDelay` 1800s, `smartShutdownTimeout` 180s) is tuned for large databases
-and works against fast node lifecycles: the operator copies `stopDelay` onto
-the pod's `terminationGracePeriodSeconds`, so at the default a single instance
-can hold up a node drain (cluster-autoscaler / Karpenter consolidation) for up
-to 30 minutes, and it can never be honoured inside a Spot interruption's
-~2-minute window anyway. This addon therefore ships shorter, drain-friendly
-defaults — `stop_delay` **300s**, `smart_shutdown_timeout` **30s** — and
-exposes `switchover_delay`, `start_delay` and `failover_delay` as opt-in
-passthroughs (`null` ⇒ operator default). Raise `stop_delay` for a large
-database whose shutdown checkpoint legitimately needs more time.
-
-**Scheduling.** Place the instance pods with `node_selector` (exact-match
-labels), `node_affinity` (set-based `required` + `preferred` match expressions,
-same shape as a web process), and `tolerations`; spread them with
-`enable_pod_anti_affinity` / `pod_anti_affinity_type` / `topology_key`. A common
-production pin is `node_affinity = { required = [{ key =
-"karpenter.sh/capacity-type", operator = "In", values = ["on-demand"] }] }` — keep
-the primary off Spot so a node reclaim can't force a failover — optionally with a
-`preferred` `arm64` term.
-
-Reference: [CloudNativePG](https://github.com/cloudnative-pg/cloudnative-pg)
-operator ([Cluster CRD](https://cloudnative-pg.io/docs/1.30/cloudnative-pg.v1)),
-[barman-cloud plugin](https://github.com/cloudnative-pg/plugin-barman-cloud).
-
-### mariadb
-
-mariadb-operator MariaDB — the MySQL-family database, same `DATABASE_URL`
-contract as the postgres addons. A single standalone server (clients use the
-`<name>` Service) or primary + replicas with operator-managed async replication
-and automatic failover (clients use `<name>-primary`, repointed on failover).
-Terraform owns the app + root passwords; optional scheduled physical backups to
-S3 (keyless via EKS Pod Identity / IRSA on `service_account_name`), and optional
-adoption of an existing database by bootstrapping from a logical dump in S3.
-Requires the mariadb-operator installed cluster-wide.
-
-- `env`: `MYSQL_HOST` (`<name>-primary` in HA, `<name>` standalone), `MYSQL_PORT`,
-  `MYSQL_USER`, `MYSQL_DATABASE`
-- `sensitive_env`: `DATABASE_URL`, `MYSQL_PWD`
-
-Reference: [mariadb-operator](https://github.com/mariadb-operator/mariadb-operator)
-([MariaDB CRD](https://github.com/mariadb-operator/mariadb-operator/blob/main/docs/api_reference.md)).
-
-### redis
-
-Bitnami Redis chart, standalone, no auth (in-cluster only). AOF persistence +
-`noeviction` so queues and flags never silently disappear under memory
-pressure.
-
-- `env`: `REDIS_URL`
-- `sensitive_env`: empty
-
-### dragonfly
-
-Operator-backed Dragonfly (Redis/Valkey-compatible) — a drop-in swap for
-`redis` (same `REDIS_URL` contract). Master + replica with operator-managed
-automatic failover, optional password auth (Terraform-owned) and optional S3
-snapshots (keyless via EKS Pod Identity / IRSA). Requires the Dragonfly
-operator installed cluster-wide.
-
-- `env`: `REDIS_URL` (auth off)
-- `sensitive_env`: `REDIS_URL` (auth on — the URL then carries the password)
-
-**Scheduling.** Place the instance pods with `node_selector` (exact-match
-labels), `node_affinity` (set-based `required` + `preferred` match expressions,
-same shape as a web process and as the postgres-cnpg addon), and `tolerations`;
-spread them with `topology_spread_constraints`. Keeping the master off Spot is
-worth more here than for a database — a node reclaim costs a failover and, with
-no `snapshot`, the whole dataset:
-
-```hcl
-node_affinity = {
-  required  = [{ key = "karpenter.sh/capacity-type", operator = "In", values = ["on-demand"] }]
-  preferred = [{ weight = 100, key = "kubernetes.io/arch", operator = "In", values = ["arm64"] }]
-}
-```
-
-Reference: [Dragonfly operator](https://github.com/dragonflydb/dragonfly-operator)
-([Dragonfly CRD](https://www.dragonflydb.io/docs/managing-dragonfly/operator/dragonfly-configuration)).
-
-### memcached
-
-Plain memcached on `fabn/workload/kubernetes`, deliberately ephemeral (no PVC).
-
-- `env`: `MEMCACHED_SERVERS` (a comma-separated `host:port` server list — no
-  URI scheme, the format memcached clients consume — matching the
-  `fabn/addons/aws` memcached addon)
-- `sensitive_env`: empty
+Managed cloud equivalents (Aurora, ElastiCache, …) live in the companion
+[`fabn/addons/aws`](https://registry.terraform.io/modules/fabn/addons/aws), which
+exposes the same contract so a stack swaps in-cluster for managed by switching
+module source.
 
 ## One-off Jobs: the `run` submodule
 
-The `heroku run` / release-phase equivalent: a `kubernetes_job_v1` that runs a
-one-shot command (DB migrations, seed loading, arbitrary tasks) in the same
-environment as a deployed process. Instead of re-declaring that environment,
-the Job reads the live Deployment's pod template and inherits its `envFrom`
-(which is how it picks up the content-hash-suffixed Secret/ConfigMap names —
-addon connection vars included), `imagePullSecrets` and `serviceAccountName`.
-
-Two things stay deliberately explicit:
-
-- **`image`** — pin the run to the artifact being released, never to whatever
-  stale tag the Deployment currently points at.
-- **`command`** — what to run.
-
-The Job defaults to one-shot semantics: `backoff_limit = 0` (migrations are
-rarely safe to blindly re-run), `restart_policy = Never`,
-`ttl_seconds_after_finished = 600`, and `wait_for_completion = true` so
-`terraform apply` blocks until the run finishes and fails when it does — the
-natural gate for release pipelines.
-
-Because a failed run aborts immediately, gate on backing-service readiness with
-the optional `init_command`, an init container sharing the Job's image and env:
+[`modules/run`](modules/run) is the `heroku run` / release-phase equivalent: a Job
+that inherits the runtime environment of a deployed process (its `envFrom` —
+content-hash-suffixed Secret/ConfigMap and addon vars included — plus pull secrets
+and service account) and runs a one-shot command. `image` and `command` stay
+explicit, so a release pins the artifact it is releasing:
 
 ```hcl
 module "migrate" {
@@ -432,23 +327,13 @@ module "migrate" {
   command      = ["/bin/bash", "-lc", "bin/rails db:migrate"]
   init_command = ["/bin/bash", "-lc", "until pg_isready -t 5; do echo 'waiting for postgres'; sleep 2; done"]
 
-  # Only needed when the formation is applied from the same root: defers the
-  # Deployment read to apply time so the first apply works too.
-  depends_on = [module.app]
+  depends_on = [module.app] # same-root applies: defer the Deployment read to apply time
 }
 ```
 
-Typically the module lives in its own tiny root that a pipeline applies after
-(or alongside) the release. Each apply that plans the Job creates a fresh
-`<deployment>-run-<random>` Job (`generate_name`); after the TTL the finished
-Job is garbage-collected, so a later refresh will plan a new run.
-
-Inputs: `namespace`, `deployment`, `image`, `command` (required);
-`init_command`, `name` (component label + name infix, default `run`), `env`
-(extra vars on top of the inherited envFrom), `backoff_limit`,
-`ttl_seconds_after_finished`, `wait_for_completion`, `timeout` (apply-side,
-default `10m`), `active_deadline_seconds` (cluster-side, default unbounded).
-Outputs: `job_name`.
+The Job defaults to one-shot semantics and `wait_for_completion = true`, so
+`terraform apply` blocks on the run and fails when it does — the natural gate for
+release pipelines. Inputs, defaults and caveats: [`modules/run`](modules/run).
 
 ## Examples
 
