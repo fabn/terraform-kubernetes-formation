@@ -87,6 +87,15 @@ locals {
     }
   }
 
+  # spec.pdb, customising the PodDisruptionBudget the operator creates on its own
+  # for a multi-replica instance. Exactly one key reaches the CR (the CRD rejects
+  # both), so the unset one is dropped rather than sent as null.
+  pdb = var.pod_disruption_budget == null ? null : (
+    var.pod_disruption_budget.min_available != null
+    ? { minAvailable = var.pod_disruption_budget.min_available }
+    : { maxUnavailable = var.pod_disruption_budget.max_unavailable }
+  )
+
   snapshot = var.snapshot == null ? null : merge(
     { cron = var.snapshot.cron },
     var.snapshot.s3_uri != null ? { dir = var.snapshot.s3_uri } : {},
@@ -161,6 +170,7 @@ resource "kubernetes_manifest" "dragonfly" {
       length(var.node_selector) > 0 ? { nodeSelector = var.node_selector } : {},
       length(var.tolerations) > 0 ? { tolerations = var.tolerations } : {},
       length(var.topology_spread_constraints) > 0 ? { topologySpreadConstraints = var.topology_spread_constraints } : {},
+      var.pod_disruption_budget != null ? { pdb = local.pdb } : {},
       local.snapshot != null ? { snapshot = local.snapshot } : {},
     )
   }

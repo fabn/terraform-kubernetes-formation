@@ -64,12 +64,19 @@ workload must expose the full availability surface, not a subset. It is what
 makes a module usable in production, and retrofitting it later is a breaking
 change to somebody's plan:
 
-- **PodDisruptionBudget** — `enable_pdb` when an operator manages the PDB itself
-  (CloudNativePG), otherwise a `pod_disruption_budget` passthrough. Without one,
-  a node drain can take every instance at once.
-- **Pod anti-affinity** — spread the instances across nodes, with the hard vs
-  soft choice exposed (`required` fits real clusters, `preferred` fits
-  single-node/dev) and the topology key configurable (node vs zone).
+- **PodDisruptionBudget** — check what the operator does on its own first: CNPG
+  manages the PDBs (so the knob is `enable_pdb`, a way to turn them *off* for
+  dev), the Dragonfly operator creates one with `maxUnavailable = 1` above one
+  replica (so the knob customises `spec.pdb`), mariadb-operator creates none (so
+  the knob is a full `pod_disruption_budget` passthrough). Without one, a node
+  drain can take every instance at once.
+- **Spread across failure domains** — either pod anti-affinity or topology spread
+  constraints, whichever the CRD models, with the **hard vs soft choice exposed**
+  (`required` / `DoNotSchedule` fits real clusters, `preferred` /
+  `ScheduleAnyway` fits single-node and dev) and the topology key configurable
+  (node vs zone). Where the CRD offers both, expose both: an operator's
+  anti-affinity shorthand usually spreads on one key only, so zone spreading
+  still needs the constraints.
 - **Node affinity** — set-based `required` + `preferred` match expressions, the
   **same object shape as the formation web process** (`key` / `operator` /
   `values`, `weight` on preferred, operators validated against
@@ -78,13 +85,23 @@ change to somebody's plan:
   reclaim otherwise costs a failover, or the whole dataset for an in-memory
   store. Not expressible with a plain `nodeSelector`, so `node_selector` alone
   does not satisfy this.
-- **Topology spread constraints** — where the upstream CRD supports them.
 - Plus the small companions that make placement usable: `node_selector`,
   `tolerations`, `priority_class_name`, and a replica/instance count.
 
 Render each of these **only when set**, so enabling nothing leaves the produced
 manifest byte-for-byte unchanged, and cover every knob in the module's tests
-(default-absent, rendered, invalid-value-rejected).
+(default-absent, rendered, invalid-value-rejected). Mirror a CRD's own
+mutual-exclusion rules in a variable `validation` (e.g. Dragonfly's `spec.pdb`
+rejects `minAvailable` + `maxUnavailable` together) so the failure lands at plan
+time instead of mid-apply.
+
+Read the upstream Go types before adding a knob: `kubernetes_manifest` sends the
+manifest as-is, so a field the CRD doesn't define fails only against a real
+cluster — the mocked unit tests can't catch it. Note where the field actually
+lives, too: CNPG's `topologySpreadConstraints` is cluster-level while its
+anti-affinity knobs sit under `spec.affinity`, and mariadb-operator keeps
+`nodeAffinity` and its `antiAffinityEnabled` shorthand under the same
+`spec.affinity` key (so they must be merged, not overwritten).
 
 Single-instance-by-construction addons (the Bitnami chart wrappers, `memcached`,
 the `run` Job) are exempt — but their README says so explicitly, and points at

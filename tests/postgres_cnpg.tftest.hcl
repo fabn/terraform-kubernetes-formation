@@ -410,3 +410,53 @@ run "cnpg_rejects_bad_node_affinity_operator" {
 
   expect_failures = [var.node_affinity]
 }
+
+# topology_spread_constraints is cluster-level (not part of the affinity block)
+# and absent unless set.
+run "cnpg_no_topology_spread_constraints_by_default" {
+  command = apply
+
+  module {
+    source = "./modules/postgres-cnpg"
+  }
+
+  variables {
+    namespace = "addon-test"
+    database  = "myapp"
+    username  = "myapp"
+  }
+
+  assert {
+    condition     = !can(kubernetes_manifest.cluster.manifest.spec.topologySpreadConstraints)
+    error_message = "topologySpreadConstraints should be omitted when not set"
+  }
+}
+
+run "cnpg_renders_topology_spread_constraints" {
+  command = apply
+
+  module {
+    source = "./modules/postgres-cnpg"
+  }
+
+  variables {
+    namespace = "addon-test"
+    database  = "myapp"
+    username  = "myapp"
+    topology_spread_constraints = [{
+      maxSkew           = 1
+      topologyKey       = "topology.kubernetes.io/zone"
+      whenUnsatisfiable = "DoNotSchedule"
+    }]
+  }
+
+  assert {
+    condition     = kubernetes_manifest.cluster.manifest.spec.topologySpreadConstraints[0].maxSkew == 1 && kubernetes_manifest.cluster.manifest.spec.topologySpreadConstraints[0].topologyKey == "topology.kubernetes.io/zone"
+    error_message = "topology spread constraints should reach spec.topologySpreadConstraints verbatim"
+  }
+
+  assert {
+    condition     = !can(kubernetes_manifest.cluster.manifest.spec.affinity.topologySpreadConstraints)
+    error_message = "topologySpreadConstraints belongs to the Cluster spec, not to the affinity block"
+  }
+}

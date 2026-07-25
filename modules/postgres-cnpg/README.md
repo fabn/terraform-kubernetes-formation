@@ -73,6 +73,7 @@ See also [`examples/postgres-cnpg`](../../examples/postgres-cnpg).
 | `pod_anti_affinity_type` | `preferred` | `required` (hard, true HA) or `preferred` (soft, fits single-node/dev) |
 | `topology_key` | `kubernetes.io/hostname` | Topology key the anti-affinity spreads on (use a zone key where zones exist) |
 | `node_affinity` | `null` | Set-based placement: `required` + `preferred` match expressions, same shape as a formation web process. Rendered into `spec.affinity.nodeAffinity` |
+| `topology_spread_constraints` | `[]` | Passed verbatim to `spec.topologySpreadConstraints` (k8s camelCase, cluster-level — not part of the affinity block). Spreads across zones with an explicit skew, where the anti-affinity knobs spread on a single topology key |
 | `node_selector` | `{}` | Exact-match labels (e.g. a dedicated DB node pool) |
 | `tolerations` | `[]` | e.g. the `dedicated=database:NoSchedule` taint on a DB node pool |
 | `priority_class_name` | `null` | PriorityClass for the instance pods |
@@ -85,6 +86,17 @@ node_affinity = {
   required  = [{ key = "karpenter.sh/capacity-type", operator = "In", values = ["on-demand"] }]
   preferred = [{ weight = 100, key = "kubernetes.io/arch", operator = "In", values = ["arm64"] }]
 }
+```
+
+On a multi-zone cluster, pair the per-node anti-affinity with a zone spread —
+`enable_pod_anti_affinity` only spreads on one topology key at a time:
+
+```hcl
+topology_spread_constraints = [{
+  maxSkew           = 1
+  topologyKey       = "topology.kubernetes.io/zone"
+  whenUnsatisfiable = "ScheduleAnyway" # DoNotSchedule once every zone has capacity
+}]
 ```
 
 ### Shutdown / lifecycle timings

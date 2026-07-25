@@ -152,3 +152,108 @@ run "mariadb_bootstrap_from" {
     error_message = "bootstrapFrom should carry the target recovery time"
   }
 }
+
+# node_affinity and topology_spread_constraints are absent unless set, and the
+# operator's antiAffinityEnabled shorthand stays the only affinity key by default.
+run "mariadb_no_placement_by_default" {
+  command = apply
+
+  module {
+    source = "./modules/mariadb"
+  }
+
+  variables {
+    namespace = "addon-test"
+    database  = "myapp"
+    username  = "myapp"
+  }
+
+  assert {
+    condition     = !can(kubernetes_manifest.mariadb.manifest.spec.affinity)
+    error_message = "affinity should be omitted when neither anti_affinity nor node_affinity is set"
+  }
+
+  assert {
+    condition     = !can(kubernetes_manifest.mariadb.manifest.spec.topologySpreadConstraints)
+    error_message = "topologySpreadConstraints should be omitted when not set"
+  }
+}
+
+# node_affinity renders into spec.affinity.nodeAffinity next to (not instead of)
+# the operator's antiAffinityEnabled shorthand.
+run "mariadb_renders_node_affinity" {
+  command = apply
+
+  module {
+    source = "./modules/mariadb"
+  }
+
+  variables {
+    namespace     = "addon-test"
+    database      = "myapp"
+    username      = "myapp"
+    anti_affinity = true
+    node_affinity = {
+      required  = [{ key = "karpenter.sh/capacity-type", operator = "In", values = ["on-demand"] }]
+      preferred = [{ weight = 100, key = "kubernetes.io/arch", operator = "In", values = ["arm64"] }]
+    }
+  }
+
+  assert {
+    condition     = kubernetes_manifest.mariadb.manifest.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].key == "karpenter.sh/capacity-type"
+    error_message = "required node affinity should render into a hard node-selector term"
+  }
+
+  assert {
+    condition     = kubernetes_manifest.mariadb.manifest.spec.affinity.nodeAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].weight == 100 && kubernetes_manifest.mariadb.manifest.spec.affinity.nodeAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].preference.matchExpressions[0].key == "kubernetes.io/arch"
+    error_message = "preferred node affinity should render as a weighted term"
+  }
+
+  assert {
+    condition     = kubernetes_manifest.mariadb.manifest.spec.affinity.antiAffinityEnabled == true
+    error_message = "node_affinity must not displace the operator's antiAffinityEnabled shorthand"
+  }
+}
+
+# Invalid node_affinity operator is rejected.
+run "mariadb_rejects_bad_node_affinity_operator" {
+  command = plan
+
+  module {
+    source = "./modules/mariadb"
+  }
+
+  variables {
+    namespace     = "addon-test"
+    database      = "myapp"
+    username      = "myapp"
+    node_affinity = { required = [{ key = "x", operator = "Banana", values = [] }] }
+  }
+
+  expect_failures = [var.node_affinity]
+}
+
+# topology_spread_constraints is passed through verbatim.
+run "mariadb_renders_topology_spread_constraints" {
+  command = apply
+
+  module {
+    source = "./modules/mariadb"
+  }
+
+  variables {
+    namespace = "addon-test"
+    database  = "myapp"
+    username  = "myapp"
+    topology_spread_constraints = [{
+      maxSkew           = 1
+      topologyKey       = "topology.kubernetes.io/zone"
+      whenUnsatisfiable = "ScheduleAnyway"
+    }]
+  }
+
+  assert {
+    condition     = kubernetes_manifest.mariadb.manifest.spec.topologySpreadConstraints[0].topologyKey == "topology.kubernetes.io/zone"
+    error_message = "topology spread constraints should reach spec.topologySpreadConstraints verbatim"
+  }
+}

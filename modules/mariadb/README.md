@@ -74,12 +74,30 @@ See also [`examples/mariadb`](../../examples/mariadb).
 | --- | --- | --- |
 | `pod_disruption_budget` | `null` | Passed verbatim to `spec.podDisruptionBudget` — the operator manages none automatically, e.g. `{ minAvailable = "50%" }` |
 | `anti_affinity` | `false` | Require instances to spread across nodes (true HA). Leave false on single-node clusters, or replicas stay `Pending` |
+| `node_affinity` | `null` | Set-based placement: `required` + `preferred` match expressions, same shape as a formation web process. Rendered into `spec.affinity.nodeAffinity`, alongside `anti_affinity` rather than instead of it |
+| `topology_spread_constraints` | `[]` | Passed verbatim to `spec.topologySpreadConstraints` (k8s camelCase). Spreads across zones with an explicit skew and a soft/hard `whenUnsatisfiable`, where `anti_affinity` only offers hard per-node spreading |
 | `node_selector` | `{}` | Exact-match labels (e.g. a dedicated DB node pool) |
 | `tolerations` | `[]` | e.g. the `dedicated=database:NoSchedule` taint on a DB node pool |
 | `priority_class_name` | `null` | PriorityClass for the instance pods |
 
 Set `pod_disruption_budget` on any multi-replica deployment: without one, a node
 drain can take the primary and a replica at the same time.
+
+Keep the primary off Spot — a reclaim forces a failover and a write blip — and
+spread the instances across zones:
+
+```hcl
+node_affinity = {
+  required  = [{ key = "karpenter.sh/capacity-type", operator = "In", values = ["on-demand"] }]
+  preferred = [{ weight = 100, key = "kubernetes.io/arch", operator = "In", values = ["arm64"] }]
+}
+
+topology_spread_constraints = [{
+  maxSkew           = 1
+  topologyKey       = "topology.kubernetes.io/zone"
+  whenUnsatisfiable = "ScheduleAnyway"
+}]
+```
 
 ### Backup
 

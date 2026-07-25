@@ -292,10 +292,10 @@ own README; the table below is the TL;DR for picking one.
 | Addon | What it is | `env` | `sensitive_env` | HA |
 | --- | --- | --- | --- | --- |
 | [`postgres`](modules/postgres) | Bitnami PostgreSQL chart, standalone | `PGHOST`, `PGPORT`, `PGUSER`, `PGDATABASE` | `DATABASE_URL`, `PGPASSWORD` | — |
-| [`postgres-cnpg`](modules/postgres-cnpg) | CloudNativePG `Cluster`: primary + replicas, failover, PITR to S3. Drop-in swap for `postgres` (host is `<name>-rw`) | same | same | PDB, anti-affinity, node affinity |
-| [`mariadb`](modules/mariadb) | mariadb-operator `MariaDB`: standalone or primary + replicas with failover, S3 backups, adoption from a dump | `MYSQL_HOST`, `MYSQL_PORT`, `MYSQL_USER`, `MYSQL_DATABASE` | `DATABASE_URL`, `MYSQL_PWD` | PDB, anti-affinity |
+| [`postgres-cnpg`](modules/postgres-cnpg) | CloudNativePG `Cluster`: primary + replicas, failover, PITR to S3. Drop-in swap for `postgres` (host is `<name>-rw`) | same | same | PDB, anti-affinity, node affinity, topology spread |
+| [`mariadb`](modules/mariadb) | mariadb-operator `MariaDB`: standalone or primary + replicas with failover, S3 backups, adoption from a dump | `MYSQL_HOST`, `MYSQL_PORT`, `MYSQL_USER`, `MYSQL_DATABASE` | `DATABASE_URL`, `MYSQL_PWD` | PDB, anti-affinity, node affinity, topology spread |
 | [`redis`](modules/redis) | Bitnami Redis chart, standalone, no auth, AOF + `noeviction` | `REDIS_URL` | — | — |
-| [`dragonfly`](modules/dragonfly) | Operator-backed Dragonfly: master + replica with failover, optional auth, S3 snapshots, cache mode. Drop-in swap for `redis` | `REDIS_URL` (auth off) | `REDIS_URL` (auth on) | replicas, topology spread, node affinity |
+| [`dragonfly`](modules/dragonfly) | Operator-backed Dragonfly: master + replica with failover, optional auth, S3 snapshots, cache mode. Drop-in swap for `redis` | `REDIS_URL` (auth off) | `REDIS_URL` (auth on) | PDB, replicas, topology spread, node affinity |
 | [`memcached`](modules/memcached) | Plain memcached, deliberately ephemeral (no PVC) | `MEMCACHED_SERVERS` | — | — |
 
 The operator-backed addons require their operator installed cluster-wide.

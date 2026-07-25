@@ -192,6 +192,12 @@ variable "tolerations" {
   default = []
 }
 
+variable "topology_spread_constraints" {
+  description = "topologySpreadConstraints for the instance pods, passed verbatim to spec.topologySpreadConstraints (k8s camelCase fields). Spreads instances across zones with an explicit skew, where the anti-affinity knobs only spread on one topology key."
+  type        = any
+  default     = []
+}
+
 variable "priority_class_name" {
   description = "PriorityClass for the instance pods."
   type        = string
