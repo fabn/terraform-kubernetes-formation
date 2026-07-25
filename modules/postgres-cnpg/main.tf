@@ -116,13 +116,16 @@ resource "kubernetes_manifest" "cluster" {
       var.switchover_delay != null ? { switchoverDelay = var.switchover_delay } : {},
       var.start_delay != null ? { startDelay = var.start_delay } : {},
       var.failover_delay != null ? { failoverDelay = var.failover_delay } : {},
-      # Both keys must be present (null when empty): kubernetes_manifest types
-      # inheritedMetadata as object({labels, annotations}) from the CRD schema,
-      # so a partial object like {labels = ...} fails to transform.
+      # Both keys must be present — kubernetes_manifest types inheritedMetadata
+      # as object({labels, annotations}) from the CRD schema, so a partial object
+      # fails to transform. Use an empty map (not null) for the unused one:
+      # sending null is what the operator normalises away server-side, leaving a
+      # perpetual `annotations = (known after apply)` diff that re-applies the
+      # Cluster every plan (#32).
       length(local.inherited_labels) > 0 || length(var.annotations) > 0 ? {
         inheritedMetadata = {
-          labels      = length(local.inherited_labels) > 0 ? local.inherited_labels : null
-          annotations = length(var.annotations) > 0 ? var.annotations : null
+          labels      = local.inherited_labels
+          annotations = var.annotations
         }
       } : {},
       var.backup != null ? {
