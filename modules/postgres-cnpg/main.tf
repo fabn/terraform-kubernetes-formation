@@ -147,6 +147,8 @@ resource "kubernetes_manifest" "cluster" {
         }
       },
       var.image_name != null ? { imageName = var.image_name } : {},
+      # Cluster-level (not part of the affinity block, unlike the anti-affinity knobs).
+      length(var.topology_spread_constraints) > 0 ? { topologySpreadConstraints = var.topology_spread_constraints } : {},
       var.priority_class_name != null ? { priorityClassName = var.priority_class_name } : {},
       var.switchover_delay != null ? { switchoverDelay = var.switchover_delay } : {},
       var.start_delay != null ? { startDelay = var.start_delay } : {},

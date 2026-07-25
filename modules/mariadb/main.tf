@@ -38,6 +38,46 @@ locals {
     )
   }
 
+  # spec.affinity is an AffinityConfig: the operator's own antiAffinityEnabled
+  # shorthand plus a standard corev1 nodeAffinity. Both live under the same key,
+  # so they are merged into one object and the key is emitted only when at least
+  # one of them is set. `required` node-affinity expressions are ANDed into one
+  # hard node-selector term; `preferred` become soft/weighted terms.
+  na_required  = try(var.node_affinity.required, [])
+  na_preferred = try(var.node_affinity.preferred, [])
+  node_affinity = length(local.na_required) + length(local.na_preferred) == 0 ? {} : {
+    nodeAffinity = merge(
+      length(local.na_required) > 0 ? {
+        requiredDuringSchedulingIgnoredDuringExecution = {
+          nodeSelectorTerms = [{
+            matchExpressions = [for e in local.na_required : {
+              key      = e.key
+              operator = e.operator
+              values   = e.values
+            }]
+          }]
+        }
+      } : {},
+      length(local.na_preferred) > 0 ? {
+        preferredDuringSchedulingIgnoredDuringExecution = [for p in local.na_preferred : {
+          weight = p.weight
+          preference = {
+            matchExpressions = [{
+              key      = p.key
+              operator = p.operator
+              values   = p.values
+            }]
+          }
+        }]
+      } : {},
+    )
+  }
+
+  affinity = merge(
+    var.anti_affinity ? { antiAffinityEnabled = true } : {},
+    local.node_affinity,
+  )
+
   # S3 storage block shared by the backup and bootstrap-from sources. Keyless
   # when no credentials Secret is given: the key refs are simply omitted and the
   # pod writes with its ambient IAM identity (EKS Pod Identity / IRSA).
@@ -153,10 +193,11 @@ resource "kubernetes_manifest" "mariadb" {
       } : {},
       var.image != null ? { image = var.image } : {},
       var.service_account_name != null ? { serviceAccountName = var.service_account_name } : {},
-      var.anti_affinity ? { affinity = { antiAffinityEnabled = true } } : {},
+      length(local.affinity) > 0 ? { affinity = local.affinity } : {},
       var.pod_disruption_budget != null ? { podDisruptionBudget = var.pod_disruption_budget } : {},
       length(var.node_selector) > 0 ? { nodeSelector = var.node_selector } : {},
       length(var.tolerations) > 0 ? { tolerations = var.tolerations } : {},
+      length(var.topology_spread_constraints) > 0 ? { topologySpreadConstraints = var.topology_spread_constraints } : {},
       var.priority_class_name != null ? { priorityClassName = var.priority_class_name } : {},
       # inheritMetadata is typed object({labels, annotations}) by the CRD, so send
       # both keys (empty maps when unused) or kubernetes_manifest's transform

@@ -394,3 +394,101 @@ run "dragonfly_rejects_bad_node_affinity_operator" {
 
   expect_failures = [var.node_affinity]
 }
+
+# spec.pdb is absent unless set: the operator creates its own default budget
+# (maxUnavailable = 1) for a multi-replica instance.
+run "dragonfly_no_pdb_by_default" {
+  command = apply
+
+  module {
+    source = "./modules/dragonfly"
+  }
+
+  variables {
+    namespace = "addon-test"
+  }
+
+  assert {
+    condition     = !can(kubernetes_manifest.dragonfly.manifest.spec.pdb)
+    error_message = "spec.pdb should be omitted when pod_disruption_budget is not set"
+  }
+}
+
+# Only the key that was set reaches the CR — the CRD rejects both at once.
+run "dragonfly_renders_pdb_min_available" {
+  command = apply
+
+  module {
+    source = "./modules/dragonfly"
+  }
+
+  variables {
+    namespace             = "addon-test"
+    replicas              = 3
+    pod_disruption_budget = { min_available = "2" }
+  }
+
+  assert {
+    condition     = kubernetes_manifest.dragonfly.manifest.spec.pdb.minAvailable == "2"
+    error_message = "min_available should render as spec.pdb.minAvailable"
+  }
+
+  assert {
+    condition     = !can(kubernetes_manifest.dragonfly.manifest.spec.pdb.maxUnavailable)
+    error_message = "the unset PDB key must not be sent (the CRD rejects both keys together)"
+  }
+}
+
+run "dragonfly_renders_pdb_max_unavailable" {
+  command = apply
+
+  module {
+    source = "./modules/dragonfly"
+  }
+
+  variables {
+    namespace             = "addon-test"
+    pod_disruption_budget = { max_unavailable = "50%" }
+  }
+
+  assert {
+    condition     = kubernetes_manifest.dragonfly.manifest.spec.pdb.maxUnavailable == "50%"
+    error_message = "max_unavailable should render as spec.pdb.maxUnavailable"
+  }
+
+  assert {
+    condition     = !can(kubernetes_manifest.dragonfly.manifest.spec.pdb.minAvailable)
+    error_message = "the unset PDB key must not be sent (the CRD rejects both keys together)"
+  }
+}
+
+# Both keys, or neither, is rejected at plan time like the CRD's CEL rule does.
+run "dragonfly_rejects_both_pdb_keys" {
+  command = plan
+
+  module {
+    source = "./modules/dragonfly"
+  }
+
+  variables {
+    namespace             = "addon-test"
+    pod_disruption_budget = { min_available = "1", max_unavailable = "1" }
+  }
+
+  expect_failures = [var.pod_disruption_budget]
+}
+
+run "dragonfly_rejects_empty_pdb" {
+  command = plan
+
+  module {
+    source = "./modules/dragonfly"
+  }
+
+  variables {
+    namespace             = "addon-test"
+    pod_disruption_budget = {}
+  }
+
+  expect_failures = [var.pod_disruption_budget]
+}

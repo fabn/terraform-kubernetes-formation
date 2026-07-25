@@ -217,6 +217,27 @@ variable "topology_spread_constraints" {
   default     = []
 }
 
+# The operator already creates a PodDisruptionBudget for every instance with more
+# than one replica, defaulting to maxUnavailable = 1. This only customises that
+# budget (spec.pdb): minAvailable is the useful override on a 3+ replica instance,
+# where "one at a time" is more conservative than necessary. The CRD rejects both
+# keys at once (a CEL rule), so it is validated here too.
+variable "pod_disruption_budget" {
+  description = "Override the operator's PodDisruptionBudget (spec.pdb): set exactly one of min_available / max_unavailable, absolute (\"1\") or percentage (\"50%\"). null keeps the operator default (maxUnavailable = 1, and no PDB at all when replicas = 1)."
+  type = object({
+    min_available   = optional(string)
+    max_unavailable = optional(string)
+  })
+  default = null
+
+  validation {
+    condition = var.pod_disruption_budget == null ? true : (
+      (var.pod_disruption_budget.min_available != null) != (var.pod_disruption_budget.max_unavailable != null)
+    )
+    error_message = "Set exactly one of pod_disruption_budget.min_available or pod_disruption_budget.max_unavailable."
+  }
+}
+
 # --- readiness ---------------------------------------------------------------
 
 variable "wait_for_ready" {

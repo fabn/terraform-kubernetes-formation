@@ -88,6 +88,7 @@ See also [`examples/dragonfly`](../../examples/dragonfly).
 | `node_selector` | `{}` | Exact-match labels |
 | `tolerations` | `[]` | Tolerations for the instance pods |
 | `topology_spread_constraints` | `[]` | Spread master/replica across nodes or zones |
+| `pod_disruption_budget` | `null` | Override the PDB the operator creates on its own (`spec.pdb`): exactly one of `min_available` / `max_unavailable`, absolute (`"1"`) or percentage (`"50%"`) |
 
 Keeping the master off Spot is worth more here than for a database: a node reclaim
 costs a failover and, with no `snapshot`, the whole dataset.
@@ -103,9 +104,21 @@ node_affinity = {
 copies verbatim onto the StatefulSet pod template; the operator sets no affinity of
 its own, so nothing is clobbered. Spreading stays on
 `topology_spread_constraints` — anti-affinity needs at least as many nodes as
-replicas, or the replica stays `Pending`. **Not exposed yet:** a
-PodDisruptionBudget (the operator manages none), so a node drain is not currently
-bounded for this addon.
+replicas, or the replica stays `Pending`.
+
+**Disruption budget.** The operator already creates a PodDisruptionBudget for any
+instance with more than one replica, defaulting to `maxUnavailable = 1` (and none at
+all at `replicas = 1`, where there is nothing to protect). `pod_disruption_budget`
+only customises that budget — the useful case being a 3+ replica instance where
+"one at a time" is more conservative than necessary:
+
+```hcl
+replicas              = 3
+pod_disruption_budget = { min_available = "2" }
+```
+
+Exactly one of the two keys may be set: the CRD enforces it with a CEL rule, and
+the module validates it at plan time so the failure isn't deferred to the apply.
 
 ## Notes
 
