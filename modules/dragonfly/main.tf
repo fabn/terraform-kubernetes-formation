@@ -50,6 +50,43 @@ locals {
     var.cache_mode ? ["--cache_mode"] : [],
   )
 
+  # Set-based node affinity rendered into spec.affinity, which the operator copies
+  # verbatim onto the StatefulSet pod template (it sets no affinity of its own, so
+  # nothing is clobbered). `required` expressions are ANDed into one hard
+  # node-selector term; `preferred` become soft/weighted terms. Emitted only when
+  # at least one term is given, so the spec stays unchanged by default.
+  na_required  = try(var.node_affinity.required, [])
+  na_preferred = try(var.node_affinity.preferred, [])
+  affinity = length(local.na_required) + length(local.na_preferred) == 0 ? {} : {
+    affinity = {
+      nodeAffinity = merge(
+        length(local.na_required) > 0 ? {
+          requiredDuringSchedulingIgnoredDuringExecution = {
+            nodeSelectorTerms = [{
+              matchExpressions = [for e in local.na_required : {
+                key      = e.key
+                operator = e.operator
+                values   = e.values
+              }]
+            }]
+          }
+        } : {},
+        length(local.na_preferred) > 0 ? {
+          preferredDuringSchedulingIgnoredDuringExecution = [for p in local.na_preferred : {
+            weight = p.weight
+            preference = {
+              matchExpressions = [{
+                key      = p.key
+                operator = p.operator
+                values   = p.values
+              }]
+            }
+          }]
+        } : {},
+      )
+    }
+  }
+
   snapshot = var.snapshot == null ? null : merge(
     { cron = var.snapshot.cron },
     var.snapshot.s3_uri != null ? { dir = var.snapshot.s3_uri } : {},
@@ -120,6 +157,7 @@ resource "kubernetes_manifest" "dragonfly" {
       var.service_account_name != null ? { serviceAccountName = var.service_account_name } : {},
       length(local.inherited_labels) > 0 ? { labels = local.inherited_labels } : {},
       length(var.annotations) > 0 ? { annotations = var.annotations } : {},
+      local.affinity,
       length(var.node_selector) > 0 ? { nodeSelector = var.node_selector } : {},
       length(var.tolerations) > 0 ? { tolerations = var.tolerations } : {},
       length(var.topology_spread_constraints) > 0 ? { topologySpreadConstraints = var.topology_spread_constraints } : {},

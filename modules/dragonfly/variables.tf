@@ -173,6 +173,38 @@ variable "node_selector" {
   default     = {}
 }
 
+# Set-based counterpart to node_selector, rendered into spec.affinity.nodeAffinity
+# (the CRD's affinity is a plain corev1.Affinity). Same shape as the formation web
+# process and the postgres-cnpg addon, so a cache can be pinned like a workload —
+# e.g. require capacity-type In [on-demand] (keep the master off spot: a node
+# reclaim costs a failover and, with no snapshot, the whole dataset), prefer
+# arch In [arm64].
+variable "node_affinity" {
+  description = "Node affinity for the instance pods (required + preferred match expressions), rendered into spec.affinity.nodeAffinity."
+  type = object({
+    required = optional(list(object({
+      key      = string
+      operator = string
+      values   = optional(list(string), [])
+    })), [])
+    preferred = optional(list(object({
+      weight   = number
+      key      = string
+      operator = string
+      values   = optional(list(string), [])
+    })), [])
+  })
+  default = null
+
+  validation {
+    condition = var.node_affinity == null ? true : alltrue([
+      for e in concat(var.node_affinity.required, var.node_affinity.preferred) :
+      contains(["In", "NotIn", "Exists", "DoesNotExist", "Gt", "Lt"], e.operator)
+    ])
+    error_message = "node_affinity operators must be one of In, NotIn, Exists, DoesNotExist, Gt, Lt."
+  }
+}
+
 variable "tolerations" {
   description = "Tolerations for the instance pods."
   type        = list(any)
