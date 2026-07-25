@@ -119,6 +119,11 @@ pod_disruption_budget = { min_available = "2" }
 
 Exactly one of the two keys may be set: the CRD enforces it with a CEL rule, and
 the module validates it at plan time so the failure isn't deferred to the apply.
+Both keys still reach the manifest, the unused one as `null` — `kubernetes_manifest`
+types the object from the CRD schema and requires every attribute, the same
+constraint that forces both `inheritedMetadata` keys in
+[`postgres-cnpg`](../postgres-cnpg) — and the API server treats that null as an
+absent key, so the mutual-exclusion rule stays satisfied.
 
 ## Notes
 

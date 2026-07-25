@@ -54,6 +54,20 @@ run "postgres_cnpg" {
     # `spec.inheritedMetadata.annotations = (known after apply)` diff (#32).
     part_of        = "e2e"
     wait_for_ready = true
+
+    # Placement is exercised here because the mocked unit tests can't: the manifest
+    # is sent as-is, so a field the CRD doesn't define (or one it stores in a
+    # different shape) only fails against a real API server. Both terms are
+    # satisfiable on single-node Kind.
+    node_affinity = {
+      required  = [{ key = "kubernetes.io/os", operator = "In", values = ["linux"] }]
+      preferred = [{ weight = 100, key = "kubernetes.io/arch", operator = "In", values = ["amd64", "arm64"] }]
+    }
+    topology_spread_constraints = [{
+      maxSkew           = 1
+      topologyKey       = "kubernetes.io/hostname"
+      whenUnsatisfiable = "ScheduleAnyway" # single node: DoNotSchedule would pin a replica Pending
+    }]
   }
 
   assert {
@@ -69,6 +83,19 @@ run "postgres_cnpg" {
   assert {
     condition     = endswith(output.sensitive_env.DATABASE_URL, "@e2e-cnpg-rw:5432/myapp")
     error_message = "DATABASE_URL should target the deployed -rw host / database"
+  }
+
+  # Read back from the API server: the Cluster stored the placement as sent, and
+  # topologySpreadConstraints stayed cluster-level (it is not part of the affinity
+  # block, unlike the anti-affinity knobs).
+  assert {
+    condition     = kubernetes_manifest.cluster.object.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].key == "kubernetes.io/os"
+    error_message = "the stored Cluster should carry the required node affinity term"
+  }
+
+  assert {
+    condition     = kubernetes_manifest.cluster.object.spec.topologySpreadConstraints[0].topologyKey == "kubernetes.io/hostname"
+    error_message = "the stored Cluster should carry the topology spread constraint at spec level"
   }
 }
 
@@ -93,6 +120,20 @@ run "postgres_cnpg_idempotent" {
     storage_size   = "1Gi"
     part_of        = "e2e"
     wait_for_ready = true
+
+    # Placement is exercised here because the mocked unit tests can't: the manifest
+    # is sent as-is, so a field the CRD doesn't define (or one it stores in a
+    # different shape) only fails against a real API server. Both terms are
+    # satisfiable on single-node Kind.
+    node_affinity = {
+      required  = [{ key = "kubernetes.io/os", operator = "In", values = ["linux"] }]
+      preferred = [{ weight = 100, key = "kubernetes.io/arch", operator = "In", values = ["amd64", "arm64"] }]
+    }
+    topology_spread_constraints = [{
+      maxSkew           = 1
+      topologyKey       = "kubernetes.io/hostname"
+      whenUnsatisfiable = "ScheduleAnyway" # single node: DoNotSchedule would pin a replica Pending
+    }]
   }
 
   # On a perpetual diff the re-plan marks this exact field "known after apply",
