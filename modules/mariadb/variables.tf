@@ -110,10 +110,32 @@ variable "anti_affinity" {
   default     = false
 }
 
+# mariadb-operator manages no PodDisruptionBudget of its own, and this module
+# defaults to replicas = 2 — so without a budget a node drain can take the primary
+# and its replica at once. An HA instance therefore gets one by default
+# (maxUnavailable = 1, matching what the Dragonfly operator does above one
+# replica); a standalone instance gets none, since a single-pod budget of
+# minAvailable = 1 would block every drain forever.
+variable "enable_pdb" {
+  description = "Create a PodDisruptionBudget for the instance pods when replicas > 1 (mariadb-operator manages none itself). Set false for dev clusters where a blocking budget gets in the way; a standalone instance never gets one."
+  type        = bool
+  default     = true
+}
+
 variable "pod_disruption_budget" {
-  description = "PodDisruptionBudget passed verbatim to spec.podDisruptionBudget — mariadb-operator does not manage one automatically. e.g. `{ minAvailable = \"50%\" }`. null omits it."
-  type        = any
-  default     = null
+  description = "Override the default budget (spec.podDisruptionBudget): set exactly one of min_available / max_unavailable, absolute (\"1\") or percentage (\"50%\"). null keeps the default (maxUnavailable = 1 above one replica). Setting it also overrides the replicas > 1 condition, so an explicit budget is honoured on a standalone instance too."
+  type = object({
+    min_available   = optional(string)
+    max_unavailable = optional(string)
+  })
+  default = null
+
+  validation {
+    condition = var.pod_disruption_budget == null ? true : (
+      (var.pod_disruption_budget.min_available != null) != (var.pod_disruption_budget.max_unavailable != null)
+    )
+    error_message = "Set exactly one of pod_disruption_budget.min_available or pod_disruption_budget.max_unavailable."
+  }
 }
 
 # Set-based counterpart to node_selector, rendered into spec.affinity.nodeAffinity

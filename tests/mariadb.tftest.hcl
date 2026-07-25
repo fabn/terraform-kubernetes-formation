@@ -257,3 +257,139 @@ run "mariadb_renders_topology_spread_constraints" {
     error_message = "topology spread constraints should reach spec.topologySpreadConstraints verbatim"
   }
 }
+
+# An HA instance gets a PodDisruptionBudget by default (the operator manages
+# none), maxUnavailable = 1 — the same budget the Dragonfly operator picks.
+run "mariadb_default_pdb_when_ha" {
+  command = apply
+
+  module {
+    source = "./modules/mariadb"
+  }
+
+  variables {
+    namespace = "addon-test"
+    database  = "myapp"
+    username  = "myapp"
+    replicas  = 2
+  }
+
+  assert {
+    condition     = kubernetes_manifest.mariadb.manifest.spec.podDisruptionBudget.maxUnavailable == "1"
+    error_message = "an HA instance should default to a maxUnavailable = 1 budget"
+  }
+
+  # Both keys are sent because kubernetes_manifest requires every attribute of a
+  # CRD-derived object (#24, #38); the unused one is null, which the API server
+  # treats as absent.
+  assert {
+    condition     = kubernetes_manifest.mariadb.manifest.spec.podDisruptionBudget.minAvailable == null
+    error_message = "the unused PDB key must be sent as null, not omitted"
+  }
+}
+
+# A standalone server gets none: a single-pod minAvailable = 1 would block every
+# node drain forever.
+run "mariadb_no_pdb_when_standalone" {
+  command = apply
+
+  module {
+    source = "./modules/mariadb"
+  }
+
+  variables {
+    namespace = "addon-test"
+    database  = "myapp"
+    username  = "myapp"
+    replicas  = 1
+  }
+
+  assert {
+    condition     = !can(kubernetes_manifest.mariadb.manifest.spec.podDisruptionBudget)
+    error_message = "a standalone instance should get no PodDisruptionBudget"
+  }
+}
+
+# enable_pdb = false opts out of the default budget (dev clusters).
+run "mariadb_pdb_opt_out" {
+  command = apply
+
+  module {
+    source = "./modules/mariadb"
+  }
+
+  variables {
+    namespace  = "addon-test"
+    database   = "myapp"
+    username   = "myapp"
+    replicas   = 2
+    enable_pdb = false
+  }
+
+  assert {
+    condition     = !can(kubernetes_manifest.mariadb.manifest.spec.podDisruptionBudget)
+    error_message = "enable_pdb = false should omit the budget"
+  }
+}
+
+# An explicit budget wins, and is honoured on a standalone instance too.
+run "mariadb_explicit_pdb" {
+  command = apply
+
+  module {
+    source = "./modules/mariadb"
+  }
+
+  variables {
+    namespace             = "addon-test"
+    database              = "myapp"
+    username              = "myapp"
+    replicas              = 1
+    pod_disruption_budget = { min_available = "50%" }
+  }
+
+  assert {
+    condition     = kubernetes_manifest.mariadb.manifest.spec.podDisruptionBudget.minAvailable == "50%"
+    error_message = "an explicit budget should be honoured regardless of replica count"
+  }
+
+  assert {
+    condition     = kubernetes_manifest.mariadb.manifest.spec.podDisruptionBudget.maxUnavailable == null
+    error_message = "the unused PDB key must be sent as null, not omitted"
+  }
+}
+
+# Both keys, or neither, is rejected at plan time.
+run "mariadb_rejects_both_pdb_keys" {
+  command = plan
+
+  module {
+    source = "./modules/mariadb"
+  }
+
+  variables {
+    namespace             = "addon-test"
+    database              = "myapp"
+    username              = "myapp"
+    pod_disruption_budget = { min_available = "1", max_unavailable = "1" }
+  }
+
+  expect_failures = [var.pod_disruption_budget]
+}
+
+run "mariadb_rejects_empty_pdb" {
+  command = plan
+
+  module {
+    source = "./modules/mariadb"
+  }
+
+  variables {
+    namespace             = "addon-test"
+    database              = "myapp"
+    username              = "myapp"
+    pod_disruption_budget = {}
+  }
+
+  expect_failures = [var.pod_disruption_budget]
+}
