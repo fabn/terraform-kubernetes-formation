@@ -57,6 +57,36 @@ garbage-collected, so a later refresh will plan a new run.
 
 Output: `job_name`.
 
+## Labels
+
+The Job and its pods carry:
+
+| Label | Value |
+| --- | --- |
+| `app.kubernetes.io/name` | `<deployment>-<name>` |
+| `app.kubernetes.io/component` | `<name>` |
+| `app.kubernetes.io/part-of` | `<deployment>` |
+| `app.kubernetes.io/managed-by` | `terraform` |
+
+The run deliberately gets **its own** `app.kubernetes.io/name` instead of the
+Deployment's — the same way a sibling formation process is named `<app>-worker`
+upstream — and keeps the relationship discoverable through
+`app.kubernetes.io/part-of`.
+
+That matters because `app.kubernetes.io/name = <deployment>` is the selector
+`fabn/workload/kubernetes` gives the Deployment, its Service, its ServiceMonitor
+and its PodDisruptionBudget. A Job pod carrying it is selected by all of them:
+the disruption controller cannot compute the expected pod count for a pod owned
+by a Job (no `scale` subresource) and logs `CalculateExpectedPodCountFailed`,
+leaving the PDB status frozen while the run pod exists, and the pod is otherwise
+eligible for the web Service's endpoints.
+
+Note for Datadog users: the agent derives `kube_app_name` from
+`app.kubernetes.io/name`, so run pods are tagged `<deployment>-<name>` rather
+than `<deployment>`. `service` / `env` tagging is unaffected — this module sets
+no `tags.datadoghq.com/*` labels and the run inherits `DD_*` variables through
+the Deployment's `envFrom` as before.
+
 ## Notes
 
 Because a failed run aborts the apply immediately, gate on backing-service readiness
