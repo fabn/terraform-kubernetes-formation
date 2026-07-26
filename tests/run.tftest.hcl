@@ -110,13 +110,46 @@ run "one_shot_job_shape" {
   }
 
   assert {
-    condition     = kubernetes_job_v1.run.metadata[0].labels["app.kubernetes.io/name"] == "myapp" && kubernetes_job_v1.run.metadata[0].labels["app.kubernetes.io/component"] == "run"
-    error_message = "Job labels should carry the deployment name and the component"
+    condition     = kubernetes_job_v1.run.metadata[0].labels["app.kubernetes.io/name"] == "myapp-run" && kubernetes_job_v1.run.metadata[0].labels["app.kubernetes.io/component"] == "run"
+    error_message = "Job labels should carry its own name and the component"
+  }
+
+  assert {
+    condition     = kubernetes_job_v1.run.metadata[0].labels["app.kubernetes.io/part-of"] == "myapp"
+    error_message = "Job labels should keep the deployment grouping via part-of"
   }
 
   assert {
     condition     = length(kubernetes_job_v1.run.spec[0].template[0].spec[0].init_container) == 0
     error_message = "No init container should exist without init_command"
+  }
+}
+
+# Test: no Job pod may carry app.kubernetes.io/name == <deployment>. That label
+# is the selector of the Deployment's Service, ServiceMonitor and
+# PodDisruptionBudget upstream; a pod matching it freezes the PDB status
+# (CalculateExpectedPodCountFailed: Job has no scale subresource) and becomes
+# eligible for the web Service's endpoints.
+run "pod_labels_do_not_collide_with_deployment_selector" {
+  command = plan
+
+  module {
+    source = "./modules/run"
+  }
+
+  assert {
+    condition     = kubernetes_job_v1.run.spec[0].template[0].metadata[0].labels["app.kubernetes.io/name"] != var.deployment
+    error_message = "Job pods must not carry the Deployment's own app.kubernetes.io/name"
+  }
+
+  assert {
+    condition     = kubernetes_job_v1.run.spec[0].template[0].metadata[0].labels["app.kubernetes.io/name"] == "myapp-run"
+    error_message = "Job pods should be labelled with the run's own name"
+  }
+
+  assert {
+    condition     = kubernetes_job_v1.run.spec[0].template[0].metadata[0].labels["app.kubernetes.io/part-of"] == "myapp"
+    error_message = "Job pods should stay grouped with the deployment via part-of"
   }
 }
 
@@ -195,8 +228,8 @@ run "knob_overrides" {
   }
 
   assert {
-    condition     = kubernetes_job_v1.run.metadata[0].labels["app.kubernetes.io/component"] == "release"
-    error_message = "The name variable should drive the component label"
+    condition     = kubernetes_job_v1.run.metadata[0].labels["app.kubernetes.io/component"] == "release" && kubernetes_job_v1.run.metadata[0].labels["app.kubernetes.io/name"] == "myapp-release"
+    error_message = "The name variable should drive the component and name labels"
   }
 
   assert {

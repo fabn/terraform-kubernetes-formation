@@ -30,9 +30,27 @@ locals {
   image_pull_secrets   = [for secret in try(local.pod_spec.imagePullSecrets, []) : secret.name]
   service_account_name = try(local.pod_spec.serviceAccountName, null)
 
+  # The run must NOT inherit the Deployment's own identity label.
+  # `app.kubernetes.io/name = <deployment>` is what the workload module uses as
+  # the selector of the Deployment, its Service, its ServiceMonitor and its
+  # PodDisruptionBudget — so a Job pod carrying it is picked up by all of them:
+  #
+  #   - PDB: to compute the expected pod count the disruption controller
+  #     resolves each covered pod's controller and queries its `scale`
+  #     subresource. Job does not implement it, so the sync fails with
+  #     `CalculateExpectedPodCountFailed` and the PDB status stops being updated
+  #     for as long as a run pod exists (run duration + ttl_seconds_after_finished).
+  #   - Service: the run pod becomes eligible for the web Service's endpoints
+  #     as soon as it is Ready, which sends live traffic to a pod that only runs
+  #     the one-off command.
+  #
+  # So the run gets its own name — mirroring how a sibling process is named
+  # `<app>-<process>` upstream, and matching the Job's own generate_name — and
+  # keeps the relationship discoverable through part-of.
   labels = {
-    "app.kubernetes.io/name"       = var.deployment
+    "app.kubernetes.io/name"       = "${var.deployment}-${var.name}"
     "app.kubernetes.io/component"  = var.name
+    "app.kubernetes.io/part-of"    = var.deployment
     "app.kubernetes.io/managed-by" = "terraform"
   }
 }
