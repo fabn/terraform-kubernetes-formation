@@ -182,11 +182,39 @@ variable "formation" {
       min_available   = optional(string)
       max_unavailable = optional(string, "1")
     }))
+    # Request-based scale-to-zero for the web process via the KEDA HTTP add-on:
+    # the web scales 0..max_replicas on incoming HTTP concurrency, buffered by
+    # the shared interceptor proxy during a cold start. Only valid on the web
+    # process. When set it makes the Deployment autoscaled (replicas = null, the
+    # ScaledObject owns the count) and moves the host's Ingress into the
+    # interceptor namespace pointing at the proxy — the web process no longer
+    # renders its own direct Ingress. Non-prod feature: production should keep a
+    # warm floor (min_replicas >= 1), enforced by a validation below.
+    scale_to_zero = optional(object({
+      min_replicas       = optional(number, 0)
+      max_replicas       = optional(number, 1)
+      concurrency_target = optional(number, 100)
+      cooldown_period    = optional(number, 60)
+      readiness_timeout  = optional(string, "90s")
+      request_timeout    = optional(string, "120s")
+    }))
   }))
 
   validation {
     condition     = length([for k, p in var.formation : k if p.web]) <= 1
     error_message = "At most one formation entry may set web = true."
+  }
+
+  validation {
+    condition     = alltrue([for p in var.formation : p.scale_to_zero == null || p.web])
+    error_message = "scale_to_zero is only valid on the web process (web = true)."
+  }
+
+  validation {
+    condition = var.environment != "production" || alltrue([
+      for p in var.formation : p.scale_to_zero == null || p.scale_to_zero.min_replicas >= 1
+    ])
+    error_message = "In production the web process must keep a warm floor: set scale_to_zero.min_replicas >= 1."
   }
 
   validation {
