@@ -96,6 +96,17 @@ variable "formation" {
     # through to fabn/workload/kubernetes. node_affinity covers set-based node
     # placement; these round out the placement surface.
     node_selector = optional(map(string))
+    # Tolerations so the process can run on a tainted dedicated node pool: the
+    # node_selector attracts the pod to the pool, but the pool's taint still
+    # repels it without a matching toleration. Passed through to
+    # fabn/workload/kubernetes.
+    tolerations = optional(list(object({
+      key                = optional(string)
+      operator           = optional(string, "Equal")
+      value              = optional(string)
+      effect             = optional(string)
+      toleration_seconds = optional(number)
+    })), [])
     pod_affinity = optional(object({
       required = optional(list(object({
         topology_key = string

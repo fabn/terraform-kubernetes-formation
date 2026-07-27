@@ -317,6 +317,7 @@ run "node_selector_and_pod_affinity_passthrough" {
         web           = true
         ports         = { http = 3000 }
         node_selector = { "disktype" = "ssd" }
+        tolerations   = [{ key = "example.com/dedicated", operator = "Exists", effect = "NoSchedule" }]
         pod_affinity = {
           required = [
             { topology_key = "kubernetes.io/hostname", match_labels = { app = "cache" } },
@@ -329,6 +330,11 @@ run "node_selector_and_pod_affinity_passthrough" {
   assert {
     condition     = module.process["web"].deployment.spec[0].template[0].spec[0].node_selector["disktype"] == "ssd"
     error_message = "Web process should forward the node selector"
+  }
+
+  assert {
+    condition     = module.process["web"].deployment.spec[0].template[0].spec[0].toleration[0].key == "example.com/dedicated"
+    error_message = "Web process should forward the toleration to the tainted pool"
   }
 
   assert {

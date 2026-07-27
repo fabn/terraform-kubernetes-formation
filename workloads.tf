@@ -4,8 +4,9 @@
 # `service_type = null` — a containerPort may still be declared (e.g. an
 # in-process metrics exporter reached on the pod IP by autodiscovery checks).
 module "process" {
-  source  = "fabn/workload/kubernetes"
-  version = ">= 0.8.2, < 1.0.0"
+  source = "fabn/workload/kubernetes"
+  # >= 0.8.3 for the `tolerations` input (spec.tolerations rendering).
+  version = ">= 0.8.3, < 1.0.0"
 
   for_each = var.formation
 
@@ -32,6 +33,7 @@ module "process" {
 
   node_affinity               = each.value.node_affinity
   node_selector               = each.value.node_selector
+  tolerations                 = each.value.tolerations
   pod_affinity                = each.value.pod_affinity
   pod_anti_affinity           = each.value.pod_anti_affinity
   anti_affinity               = each.value.anti_affinity
