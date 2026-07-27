@@ -184,6 +184,7 @@ lefthook run validate-all
 │   ├── dragonfly/       # Operator-backed Dragonfly: HA master + replica, cache mode
 │   ├── memcached/       # memcached on fabn/workload/kubernetes, ephemeral
 │   ├── addons/          # Wrapper: sizes postgres/redis/memcached behind one map
+│   ├── keda-http/       # Per-app KEDA HTTP scale-to-zero for the web process
 │   └── run/             # One-off Job (heroku run / release phase equivalent)
 │
 ├── examples/            # Usage examples

@@ -14,7 +14,8 @@ module "process" {
   image     = var.image
   # Autoscaled processes forward a null count so the field is omitted from
   # the manifest and the external autoscaler (HPA, KEDA) keeps ownership.
-  replicas = each.value.autoscaled ? null : each.value.replicas
+  # scale_to_zero is autoscaled too: its ScaledObject owns the 0..N count.
+  replicas = each.value.autoscaled || each.value.scale_to_zero != null ? null : each.value.replicas
 
   command = each.value.command
   args    = each.value.args
@@ -47,10 +48,14 @@ module "process" {
   secret_refs        = [module.secrets.name]
   config_map_refs    = [module.config.name]
 
-  ingress_hostnames   = each.value.web ? [var.domain] : []
+  # A scale-to-zero web renders no direct Ingress: the host is owned by the
+  # interceptor Ingress (keda-http.tf) so live traffic goes through the proxy,
+  # not straight to the scaled-to-zero Service. The ClusterIP Service stays —
+  # it is the interceptor's forward target.
+  ingress_hostnames   = each.value.web && each.value.scale_to_zero == null ? [var.domain] : []
   ingress_class_name  = var.ingress_class_name
-  ingress_annotations = each.value.web ? var.ingress_annotations : {}
-  alb                 = each.value.web ? var.alb : null
+  ingress_annotations = each.value.web && each.value.scale_to_zero == null ? var.ingress_annotations : {}
+  alb                 = each.value.web && each.value.scale_to_zero == null ? var.alb : null
 
   datadog_enabled  = var.datadog_enabled
   datadog_ust_tags = local.datadog_ust_tags
