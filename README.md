@@ -277,6 +277,7 @@ non-prod idle environments. The rendered objects and every knob:
 | `datadog_checks` | Datadog autodiscovery checks | `any` | `{}` |
 | `node_affinity` | Node affinity: `required` match expressions (ANDed into one hard term) + `preferred` weighted match expressions. E.g. require spot & non-`t`, prefer `arm64`. | `object({ required, preferred })` | `null` |
 | `node_selector` | Exact-match node selector (label => value) | `map(string)` | `null` |
+| `tolerations` | Tolerations so the process can run on a tainted dedicated node pool (`node_selector` attracts, the taint still repels without a matching toleration). Passed through to `fabn/workload/kubernetes`. | `list(object({ key, operator, value, effect, toleration_seconds }))` | `[]` |
 | `pod_affinity` | Pod affinity (co-location): `required`/`preferred` terms, each a `topology_key` + label selector. | `object({ required, preferred })` | `null` |
 | `pod_anti_affinity` | Raw pod anti-affinity (spread) rules, same shape as `pod_affinity`. Escape hatch for arbitrary topology keys/selectors; additive to `anti_affinity`. | `object({ required, preferred })` | `null` |
 | `anti_affinity` | Anti-affinity strategy spreading this process's own replicas across nodes: `"soft"` (preferred) or `"hard"` (required, one replica per node). | `string` | `"soft"` |
