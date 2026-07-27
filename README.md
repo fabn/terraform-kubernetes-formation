@@ -20,6 +20,10 @@ the building block it composes.
   other process runs headless and is restarted by the kubelet on process
   exit. Worker-only stacks (queue consumers, schedulers) simply omit the web
   entry
+- **Request-based scale-to-zero** (web): opt a web process into KEDA HTTP
+  scale-to-zero (`scale_to_zero`) — it scales `0..N` on incoming HTTP
+  concurrency, buffered by the shared interceptor proxy during a cold start,
+  so idle environments cost ~nothing
 - **Shared env**: one ConfigMap (`env`) + one Secret (`secret_env`) sourced by
   every process, content-hash named so changes roll the deployments
 - **Generated `SECRET_KEY_BASE`**: nothing sensitive needs to live in plaintext
@@ -197,6 +201,36 @@ module "app" {
 }
 ```
 
+### Request-based scale-to-zero (KEDA HTTP add-on)
+
+Opt a web process into request-based scale-to-zero: the web scales `0..N` on
+incoming HTTP concurrency, and the shared interceptor proxy buffers requests
+during a cold start, so an idle environment costs ~nothing. **Requires the
+[KEDA HTTP add-on](https://github.com/kedacore/http-add-on) control plane
+installed cluster-wide** (operator + interceptor proxy + external scaler +
+`http.keda.sh` CRDs), in the interceptor namespace (default `keda`).
+
+```hcl
+formation = {
+  web = {
+    web   = true
+    ports = { http = 3000 }
+    scale_to_zero = {
+      max_replicas = 3 # min 0, concurrency 100, cooldown 60s, timeouts by default
+    }
+  }
+}
+```
+
+Setting `scale_to_zero` makes the web autoscaled (`replicas = null`, the
+ScaledObject owns the count) and **suppresses its own direct Ingress** — the
+host is served instead by an Ingress in the interceptor namespace pointing at
+the interceptor proxy, so live traffic goes through it. The ClusterIP Service
+stays as the interceptor's forward target. It is web-only, and production must
+keep a warm floor (`min_replicas >= 1`) — the add-on is upstream beta, for
+non-prod idle environments. The rendered objects and every knob:
+[`modules/keda-http`](modules/keda-http).
+
 ## Requirements
 
 | Name | Version |
@@ -249,6 +283,7 @@ module "app" {
 | `topology_spread_constraints` | Even pod distribution across topology domains (zones, nodes): list of `{ max_skew, topology_key, when_unsatisfiable, min_domains?, label_selector? }`. | `list(object(...))` | `null` |
 | `pdb_enabled` | Create a PodDisruptionBudget for this process (guards availability during node drains/rollouts). | `bool` | `false` |
 | `pdb_config` | PDB budget: `{ min_available, max_unavailable }` (set one, not both). Applied when `pdb_enabled`. | `object({ min_available, max_unavailable })` | `max_unavailable = "1"` |
+| `scale_to_zero` | Opt the web process into request-based scale-to-zero (KEDA HTTP add-on): `{ min_replicas, max_replicas, concurrency_target, cooldown_period, readiness_timeout, request_timeout }`. Makes the web autoscaled and moves its host onto the interceptor. Web-only; production keeps `min_replicas >= 1`. See [`modules/keda-http`](modules/keda-http). | `object(...)` | `null` |
 
 ### Optional
 
