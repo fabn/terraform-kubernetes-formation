@@ -4,8 +4,9 @@
 # failure mode that matters for a cache.
 
 module "memcached" {
-  source  = "fabn/workload/kubernetes"
-  version = "~> 0.6"
+  source = "fabn/workload/kubernetes"
+  # >= 0.8.3 for the `tolerations` input, the same floor the formation root uses.
+  version = ">= 0.8.3, < 1.0.0"
 
   name      = var.name
   namespace = var.namespace
@@ -21,4 +22,7 @@ module "memcached" {
 
   labels          = var.labels
   pod_annotations = var.annotations
+
+  node_selector = var.node_selector
+  tolerations   = var.tolerations
 }

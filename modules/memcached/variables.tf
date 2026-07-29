@@ -44,3 +44,25 @@ variable "annotations" {
   type        = map(string)
   default     = {}
 }
+
+# Scheduling, mirroring the postgres-cnpg and dragonfly addons. Without these a
+# stack that pins every workload to a dedicated (tainted) node pool still gets
+# its memcached scheduled on the default pool, since the pod has neither the
+# selector nor the toleration — silently breaking the isolation the pool exists
+# for.
+variable "node_selector" {
+  description = "nodeSelector for the memcached pods."
+  type        = map(string)
+  default     = {}
+}
+
+variable "tolerations" {
+  description = "Tolerations for the memcached pods (e.g. the NoSchedule taint on a dedicated node pool)."
+  type = list(object({
+    key      = optional(string)
+    operator = optional(string, "Equal")
+    value    = optional(string)
+    effect   = optional(string)
+  }))
+  default = []
+}
