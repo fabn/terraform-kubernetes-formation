@@ -43,11 +43,20 @@ module "memcached" {
 | `cpu_requests` | `10m` | CPU request |
 | `memory_requests` | `64Mi` | Memory request |
 | `labels`, `annotations` | `{}`, `{}` | Metadata on the workload / pods |
+| `node_selector` | `{}` | Exact-match labels |
+| `tolerations` | `[]` | Tolerations for the memcached pods |
 
 ## HA & placement
 
-**Not exposed.** Single ephemeral replica, no PDB, no anti-affinity, no node
-affinity/selector, no topology spread: a drain cold-starts the cache, which is the
+**Placement is exposed; availability is not.**
+
+`node_selector` and `tolerations` exist so the cache can follow the rest of a stack
+onto a dedicated, tainted node pool. Without them the memcached pod is the one
+component left on the default pool while everything around it is pinned — an
+incomplete isolation rather than a deliberate choice.
+
+Nothing else is exposed — single ephemeral replica, no PDB, no anti-affinity, no
+node affinity, no topology spread: a drain cold-starts the cache, which is the
 accepted trade-off for this addon rather than an oversight. If a cache ever needs
 to survive node churn, that is a [`dragonfly`](../dragonfly) instance with
 `cache_mode = true` — it has replicas, failover and the placement surface described
