@@ -60,6 +60,16 @@ module "app" {
       args           = ["bundle", "exec", "sidekiq", "-c", "2"]
       datadog_source = "sidekiq"
     }
+    # A headless process exposing an in-process metrics endpoint on a named
+    # port other than "http": probe_port points the probes at the port it
+    # actually serves, so a liveness failure restarts it even though the
+    # main thread never exits.
+    exporter = {
+      args            = ["bundle", "exec", "exporter"]
+      ports           = { metrics = 9394 }
+      probe_port      = "metrics"
+      http_probe_path = "/metrics"
+    }
   }
 
   env = merge(

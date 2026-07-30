@@ -267,6 +267,116 @@ run "permissive_probe_defaults" {
   }
 }
 
+# Test: a non-web process can probe a named port other than "http" — the case
+# of a process exposing an in-process metrics endpoint. Without probe_port its
+# probes would target "http", a port name its container never declares, so it
+# had to run with no probes at all.
+run "probe_port_targets_a_non_http_named_port" {
+  command = plan
+
+  variables {
+    formation = {
+      web = {
+        web                = true
+        ports              = { http = 3000 }
+        startup_probe_path = "/healthz"
+        http_probe_path    = "/healthz"
+      }
+      exporter = {
+        args            = ["bundle", "exec", "exporter"]
+        ports           = { metrics = 9394 }
+        probe_port      = "metrics"
+        http_probe_path = "/metrics"
+      }
+    }
+  }
+
+  assert {
+    condition = (
+      module.process["exporter"].deployment.spec[0].template[0].spec[0].container[0].startup_probe[0].http_get[0].port == "metrics" &&
+      module.process["exporter"].deployment.spec[0].template[0].spec[0].container[0].liveness_probe[0].http_get[0].port == "metrics" &&
+      module.process["exporter"].deployment.spec[0].template[0].spec[0].container[0].readiness_probe[0].http_get[0].port == "metrics"
+    )
+    error_message = "All three probes of a non-web process should target its declared probe_port"
+  }
+
+  # http_probe_path alone drives liveness/readiness; the startup probe falls
+  # back to it, so the process gets the full set on the same port.
+  assert {
+    condition = (
+      module.process["exporter"].deployment.spec[0].template[0].spec[0].container[0].startup_probe[0].http_get[0].path == "/metrics" &&
+      module.process["exporter"].deployment.spec[0].template[0].spec[0].container[0].liveness_probe[0].http_get[0].path == "/metrics"
+    )
+    error_message = "A non-web process setting only http_probe_path should get startup + liveness/readiness probes"
+  }
+
+  # The container must actually declare the port the probes name.
+  assert {
+    condition = (
+      module.process["exporter"].deployment.spec[0].template[0].spec[0].container[0].port[0].name == "metrics" &&
+      module.process["exporter"].deployment.spec[0].template[0].spec[0].container[0].port[0].container_port == 9394
+    )
+    error_message = "The exporter should declare the named containerPort its probes target"
+  }
+
+  # Regression guard on the null passthrough: `probe_port` is optional with no
+  # default, and the downstream variable defaults to "http" without setting
+  # `nullable = false` — a variable left at the default `nullable = true` takes
+  # an explicit null *over* its default, so forwarding the unset attribute raw
+  # would render a null port here rather than preserving today's behaviour.
+  assert {
+    condition     = module.process["web"].deployment.spec[0].template[0].spec[0].container[0].startup_probe[0].http_get[0].port == "http"
+    error_message = "A process that does not set probe_port must still probe \"http\""
+  }
+}
+
+# Test: probe_port naming a port the container never declares is rejected at
+# plan time — otherwise it applies cleanly and the probe silently never resolves.
+run "validation_rejects_probe_port_outside_ports" {
+  command = plan
+
+  variables {
+    formation = {
+      web = {
+        web                = true
+        ports              = { http = 3000 }
+        startup_probe_path = "/healthz"
+      }
+      exporter = {
+        ports           = { metrics = 9394 }
+        probe_port      = "http"
+        http_probe_path = "/metrics"
+      }
+    }
+  }
+
+  expect_failures = [var.formation]
+}
+
+# Test: the validation only fires on an explicitly set probe_port — processes
+# that declare no ports at all (the common worker) stay valid.
+run "validation_allows_portless_process_without_probe_port" {
+  command = plan
+
+  variables {
+    formation = {
+      web = {
+        web                = true
+        ports              = { http = 3000 }
+        startup_probe_path = "/healthz"
+      }
+      worker = {
+        args = ["bundle", "exec", "sidekiq"]
+      }
+    }
+  }
+
+  assert {
+    condition     = length(module.process["worker"].deployment.spec[0].template[0].spec[0].container[0].startup_probe) == 0
+    error_message = "A process with no probe paths should render no probes"
+  }
+}
+
 run "node_affinity_passthrough" {
   command = plan
 

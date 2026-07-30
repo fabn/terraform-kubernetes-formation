@@ -64,6 +64,18 @@ variable "formation" {
     ports              = optional(map(number), {})
     startup_probe_path = optional(string)
     http_probe_path    = optional(string)
+    # Named port the probes target — a key of this process's `ports` map.
+    # Left unset it resolves to "http" (the fabn/workload/kubernetes default),
+    # which is what the web process wants. It exists for non-web processes that
+    # serve health on a differently named port: a process exposing an in-process
+    # metrics endpoint (`ports = { metrics = 9394 }`) would otherwise get probes
+    # pointed at a port name its container never declares, which is why such
+    # processes had to run unprobed. That matters beyond ergonomics — the
+    # kubelet only restarts a headless process when the process itself exits, so
+    # a worker whose background threads die while the main thread blocks stays
+    # Running forever; a liveness probe against the port it does serve is the
+    # only thing that catches it.
+    probe_port = optional(string)
     # Probe tuning. Defaults are more permissive than Kubernetes' own
     # (timeoutSeconds 1, failureThreshold 3): this module is shaped around
     # Rails + Sidekiq, whose cold boot — eager load + a JIT compiling the
@@ -231,6 +243,23 @@ variable "formation" {
   validation {
     condition     = alltrue([for p in var.formation : contains(["soft", "hard"], p.anti_affinity)])
     error_message = "anti_affinity must be \"soft\" or \"hard\"."
+  }
+
+  # A probe_port naming a port the container never declares fails silently:
+  # the manifest applies, the kubelet resolves nothing and the probe just never
+  # succeeds. Catch it at plan time instead. Only checked when probe_port is
+  # explicitly set — an unset one resolves downstream to "http", and validating
+  # that would reject every process that declares no ports at all.
+  validation {
+    condition = length([
+      for k, p in var.formation : k
+      if p.probe_port != null && !contains(keys(p.ports), p.probe_port)
+    ]) == 0
+    error_message = "probe_port must name a key of the same process's ports map. Offending: ${join("; ", [
+      for k, p in var.formation :
+      "${k} sets probe_port = \"${p.probe_port}\" but declares ports [${join(", ", keys(p.ports))}]"
+      if p.probe_port != null && !contains(keys(p.ports), p.probe_port)
+    ])}."
   }
 
   validation {
