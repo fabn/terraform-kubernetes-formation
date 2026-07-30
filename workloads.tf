@@ -1,8 +1,14 @@
 # One fabn/workload/kubernetes instance per formation entry. The web process
 # keeps the bare app name (Heroku-like: `myapp` + `myapp-worker`), gets
-# the Service/Ingress/probes; every other process runs headless with
+# the Service/Ingress; every other process runs headless with
 # `service_type = null` — a containerPort may still be declared (e.g. an
 # in-process metrics exporter reached on the pod IP by autodiscovery checks).
+#
+# Probes are not web-only: any process that sets a probe path gets them, and
+# `probe_port` picks the named port they target when that port is not "http".
+# Headless processes need this — without a probe the kubelet only notices a
+# process that exits, so one whose background threads die while the main thread
+# blocks stays Running and nothing restarts it.
 module "process" {
   source = "fabn/workload/kubernetes"
   # >= 0.8.3 for the `tolerations` input (spec.tolerations rendering).
@@ -24,8 +30,14 @@ module "process" {
 
   service_type = each.value.web ? "ClusterIP" : null
 
-  startup_probe_path              = each.value.startup_probe_path
-  http_probe_path                 = each.value.http_probe_path
+  startup_probe_path = each.value.startup_probe_path
+  http_probe_path    = each.value.http_probe_path
+  # Coalesced, not forwarded raw: the downstream `probe_port` defaults to "http"
+  # but does not set `nullable = false`, and a module variable whose `nullable`
+  # is left at its default of true takes an explicit null *over* its default.
+  # Passing the unset attribute straight through would therefore render every
+  # probe with a null port instead of leaving today's behaviour untouched.
+  probe_port                      = coalesce(each.value.probe_port, "http")
   startup_probe_timeout_seconds   = each.value.startup_probe_timeout_seconds
   startup_probe_failure_threshold = each.value.startup_probe_failure_threshold
   probe_timeout_seconds           = each.value.probe_timeout_seconds

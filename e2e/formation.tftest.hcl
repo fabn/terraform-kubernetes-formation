@@ -1,9 +1,10 @@
 # =============================================================================
 # E2E Formation Tests - Runs against a real Kind cluster
 # =============================================================================
-# Deploys a two-process formation (web echo-server + headless worker) behind
-# ingress-nginx and verifies the full env wiring (ConfigMap, Secret, generated
-# SECRET_KEY_BASE) through the echo server's response.
+# Deploys a three-process formation (web echo-server + headless worker +
+# headless process probed on a non-http named port) behind ingress-nginx and
+# verifies the full env wiring (ConfigMap, Secret, generated SECRET_KEY_BASE)
+# through the echo server's response.
 
 provider "kubernetes" {
   config_path    = "~/.kube/config"
@@ -46,6 +47,17 @@ run "deploy_formation" {
       worker = {
         command = ["/bin/sh", "-c", "sleep infinity"]
       }
+      # A headless process whose only named port is not "http" — the shape of a
+      # process exposing an in-process metrics endpoint. It stands in for the
+      # probe_port passthrough end to end: the Deployment waits for rollout, so
+      # it only goes Ready if the kubelet resolves the "metrics" name on the
+      # container. Pointed at "http" (the default before probe_port existed) the
+      # probe would never resolve and this run would time out.
+      metrics = {
+        ports           = { metrics = 80 }
+        probe_port      = "metrics"
+        http_probe_path = "/"
+      }
     }
 
     env        = { FROM_CONFIG_MAP = "config-value" }
@@ -72,6 +84,13 @@ run "deploy_formation" {
   assert {
     condition     = output.deployment_names.worker == "echo-worker"
     error_message = "Worker process should be named <name>-<process>"
+  }
+
+  # Reaching this at all means the rollout completed, i.e. the probes against
+  # the "metrics" named port passed on a real kubelet.
+  assert {
+    condition     = output.deployment_names.metrics == "echo-metrics"
+    error_message = "A headless process probed on a non-http named port should roll out Ready"
   }
 
   assert {

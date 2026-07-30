@@ -61,6 +61,7 @@ variable "formation" {
     ports              = optional(map(number), {})
     startup_probe_path = optional(string)
     http_probe_path    = optional(string)
+    probe_port         = optional(string)
     datadog_source     = optional(string)
     datadog_checks     = optional(any, {})
   }))

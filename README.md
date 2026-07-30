@@ -16,10 +16,16 @@ the building block it composes.
 - **Formation**: Heroku-Procfile-like map of processes; each entry becomes one
   `fabn/workload/kubernetes` instance sharing the same image
 - **Web process**: at most one entry sets `web = true` (enforced by
-  validation) and gets the Service, the Ingress and the HTTP probes; every
-  other process runs headless and is restarted by the kubelet on process
-  exit. Worker-only stacks (queue consumers, schedulers) simply omit the web
-  entry
+  validation) and gets the Service and the Ingress; every other process runs
+  headless. Worker-only stacks (queue consumers, schedulers) simply omit the
+  web entry
+- **Probes on any process**, not just the web one: a process that sets a probe
+  path gets startup/liveness/readiness, and `probe_port` picks the named port
+  they target for a process serving health on something other than `http` (an
+  in-process metrics endpoint, say). Worth doing on headless processes — with
+  no probe the kubelet only notices a process that *exits*, so one whose
+  background threads die while the main thread blocks stays `Running` and
+  nothing restarts it
 - **Request-based scale-to-zero** (web): opt a web process into KEDA HTTP
   scale-to-zero (`scale_to_zero`) — it scales `0..N` on incoming HTTP
   concurrency, buffered by the shared interceptor proxy during a cold start,
@@ -266,6 +272,7 @@ non-prod idle environments. The rendered objects and every knob:
 | `ports` | Container ports (name => port) | `map(number)` | `{}` |
 | `startup_probe_path` | HTTP startup probe path | `string` | `null` |
 | `http_probe_path` | HTTP liveness/readiness probe path | `string` | `null` |
+| `probe_port` | Named port the probes target; must be a key of this process's `ports`. Unset resolves to `"http"`, which is what the web process wants — set it for a process serving health on another named port. | `string` | `null` (⇒ `"http"`) |
 | `startup_probe_timeout_seconds` | startupProbe timeoutSeconds — more permissive than k8s (1) for cold Rails boots | `number` | `5` |
 | `startup_probe_failure_threshold` | startupProbe failureThreshold — long startup budget for slow starts | `number` | `30` |
 | `probe_timeout_seconds` | liveness/readiness timeoutSeconds — tolerates transient spikes | `number` | `3` |
