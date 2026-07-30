@@ -93,6 +93,14 @@ change to somebody's plan:
   (node vs zone). Where the CRD offers both, expose both: an operator's
   anti-affinity shorthand usually spreads on one key only, so zone spreading
   still needs the constraints.
+  `DoNotSchedule` is only the equal of `required` when paired with `min_domains`:
+  skew is computed over *eligible* domains, so one eligible node means one domain,
+  skew `0`, and the constraint permits everything it was meant to forbid — silently.
+  A module whose **only** host-spreading lever is the constraints (`dragonfly`)
+  must say so where the value is documented; one that models real anti-affinity
+  (`postgres-cnpg`, the workload processes) is unaffected, and uses the
+  constraints for zone spreading only, where `ScheduleAnyway` makes the question
+  moot.
 - **Node affinity** — set-based `required` + `preferred` match expressions, the
   **same object shape as the formation web process** (`key` / `operator` /
   `values`, `weight` on preferred, operators validated against

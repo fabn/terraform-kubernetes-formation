@@ -87,7 +87,7 @@ See also [`examples/dragonfly`](../../examples/dragonfly).
 | `node_affinity` | `null` | Set-based placement: `required` + `preferred` match expressions, same shape as a formation web process and as [`postgres-cnpg`](../postgres-cnpg). Rendered into `spec.affinity.nodeAffinity` |
 | `node_selector` | `{}` | Exact-match labels |
 | `tolerations` | `[]` | Tolerations for the instance pods |
-| `topology_spread_constraints` | `[]` | Spread master/replica across nodes or zones |
+| `topology_spread_constraints` | `[]` | Spread master/replica across nodes or zones. The only spreading lever here — a hostname `DoNotSchedule` entry needs `minDomains = 2`, see below |
 | `pod_disruption_budget` | `null` | Override the PDB the operator creates on its own (`spec.pdb`): exactly one of `min_available` / `max_unavailable`, absolute (`"1"`) or percentage (`"50%"`) |
 
 #### Production block
@@ -102,11 +102,13 @@ right production answer and none of this applies.
 replicas = 2 # default, but it is what makes failover possible
 
 # Hard spread per node: the operator sets no anti-affinity, so spreading is
-# entirely up to these constraints.
+# entirely up to these constraints. minDomains is what makes it a real rule —
+# see the caveat below, without it a one-node pool silently co-locates both.
 topology_spread_constraints = [{
   maxSkew           = 1
   topologyKey       = "kubernetes.io/hostname"
   whenUnsatisfiable = "DoNotSchedule" # ScheduleAnyway on a single-node cluster
+  minDomains        = 2
   }, {
   maxSkew           = 1
   topologyKey       = "topology.kubernetes.io/zone"
@@ -127,11 +129,30 @@ snapshot             = { s3_uri = "s3://acme-backups/myapp/dragonfly" }
 
 Already right by default, so absent above: the disruption budget (the operator
 creates one, `maxUnavailable = 1`) and `auth`. Deliberately not defaulted, because
-each needs something only you know: `DoNotSchedule` leaves the replica `Pending` on
-a single node, the zone label key exists only on a multi-zone cluster,
-`karpenter.sh/capacity-type` assumes Karpenter, and the snapshot needs a bucket.
-Size the instance (`memory_mib`, `threads`) separately — placement says nothing
-about capacity.
+each needs something only you know: `DoNotSchedule` + `minDomains` leaves the
+replica `Pending` on a single node, the zone label key exists only on a multi-zone
+cluster, `karpenter.sh/capacity-type` assumes Karpenter, and the snapshot needs a
+bucket. Size the instance (`memory_mib`, `threads`) separately — placement says
+nothing about capacity.
+
+**`minDomains` is not optional here.** Skew is computed over *eligible* domains —
+nodes that pass the pod's affinity and selectors and carry the topology key. With
+one eligible node there is one domain, the global minimum equals its own count, the
+skew is `0` by definition, and `maxSkew = 1` is satisfied no matter how many pods
+pile onto it. So a bare `DoNotSchedule` on `kubernetes.io/hostname` is not a
+one-per-node rule: it is a rule that evaporates in exactly the situation it was
+written for, and it does so silently — both instances `Running`, on one node, one
+reclaim from losing the whole dataset. `minDomains = 2` makes that state
+unschedulable instead, which is what a `required` pod anti-affinity would have done.
+It applies only to `DoNotSchedule` (the API rejects it elsewhere), so the zone entry
+above leaves it out.
+
+One Terraform wrinkle if you gate the list on `replicas > 1`: the two entries must
+then have *identical* attributes, otherwise the true branch stays a tuple instead of
+collapsing to a `list(object)`, and a tuple of length 2 will not unify with the empty
+one (`the 'true' tuple has length 2, but the 'false' tuple has length 0` — a
+confusing message, since the lengths are not the real problem). Set `minDomains` on
+both entries; it is inert on the `ScheduleAnyway` one.
 
 `node_affinity` is rendered into the CR's `spec.affinity`, which the operator
 copies verbatim onto the StatefulSet pod template; the operator sets no affinity of
