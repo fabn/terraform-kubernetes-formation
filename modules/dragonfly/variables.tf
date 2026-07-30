@@ -211,8 +211,13 @@ variable "tolerations" {
   default     = []
 }
 
+# This is the only lever for spreading master and replica: the operator sets no
+# pod anti-affinity and this module exposes none. Pair a hostname DoNotSchedule
+# constraint with minDomains — skew is measured over *eligible* domains, so with a
+# single eligible node the skew is 0 whatever lands there and the constraint stops
+# constraining, silently. See the module README.
 variable "topology_spread_constraints" {
-  description = "topologySpreadConstraints for the instance pods (spread master/replica across nodes)."
+  description = "topologySpreadConstraints for the instance pods (spread master/replica across nodes). A hostname DoNotSchedule entry needs minDomains = 2 to actually be one-per-node."
   type        = any
   default     = []
 }
