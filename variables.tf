@@ -196,6 +196,18 @@ variable "formation" {
         })), [])
       }))
     })))
+    # Seconds between SIGTERM and SIGKILL for this process (null = the
+    # Kubernetes default of 30). Unlike a PDB, which only governs *voluntary*
+    # disruptions, this applies to every termination path — autoscaler
+    # scale-in, node drain, Spot reclaim, rollout — so it is what lets a queue
+    # worker finish the job in its hands whatever stopped the pod. Such a
+    # worker's own drain timeout (Sidekiq's `-t`) has to fit inside it, or the
+    # process is killed while still waiting for its own jobs.
+    #
+    # Raising it delays every voluntary drain and node consolidation by the
+    # same amount, and on Spot the provider's interruption notice (two minutes
+    # on AWS) is a hard ceiling regardless of what is set here.
+    termination_grace_period_seconds = optional(number)
     # PodDisruptionBudget for this process, guarding availability during
     # voluntary disruptions (node drains, rollouts). `pdb_enabled` creates the
     # PDB; `pdb_config` sets the budget (defaults to max_unavailable = "1" in

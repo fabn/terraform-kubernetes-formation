@@ -532,3 +532,35 @@ run "raw_pod_anti_affinity_and_topology_spread_passthrough" {
     error_message = "topology_spread_constraints when_unsatisfiable should be forwarded"
   }
 }
+
+# The shutdown budget is per process: a queue worker needs room for its own
+# drain timeout, while a stateless web pod does not and keeps the default.
+run "termination_grace_period_passthrough" {
+  command = plan
+
+  variables {
+    formation = {
+      web = {
+        web   = true
+        ports = { http = 3000 }
+      }
+      worker = {
+        args                             = ["bundle", "exec", "sidekiq", "-t", "90"]
+        termination_grace_period_seconds = 100
+      }
+    }
+  }
+
+  assert {
+    condition     = module.process["worker"].deployment.spec[0].template[0].spec[0].termination_grace_period_seconds == 100
+    error_message = "Worker should forward its termination grace period"
+  }
+
+  # Omitted rather than pinned to 30: leaving the field unset is what lets
+  # Kubernetes apply its own default, and keeps the manifest free of a value
+  # nobody chose.
+  assert {
+    condition     = module.process["web"].deployment.spec[0].template[0].spec[0].termination_grace_period_seconds == null
+    error_message = "A process that sets no grace period should not render the field at all"
+  }
+}
