@@ -11,8 +11,8 @@
 # blocks stays Running and nothing restarts it.
 module "process" {
   source = "fabn/workload/kubernetes"
-  # >= 0.8.3 for the `tolerations` input (spec.tolerations rendering).
-  version = ">= 0.8.3, < 1.0.0"
+  # >= 0.8.4 for the `termination_grace_period_seconds` input.
+  version = ">= 0.8.4, < 1.0.0"
 
   for_each = var.formation
 
@@ -50,6 +50,8 @@ module "process" {
   pod_anti_affinity           = each.value.pod_anti_affinity
   anti_affinity               = each.value.anti_affinity
   topology_spread_constraints = each.value.topology_spread_constraints
+
+  termination_grace_period_seconds = each.value.termination_grace_period_seconds
 
   pdb_enabled = each.value.pdb_enabled
   pdb_config  = each.value.pdb_config
