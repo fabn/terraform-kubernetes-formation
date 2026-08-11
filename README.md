@@ -307,6 +307,7 @@ non-prod idle environments. The rendered objects and every knob:
 | `ingress_annotations` | Extra annotations on the web ingress | `map(string)` | `{}` |
 | `alb` | ALB termination for the web ingress: `{ load_balancer_name, healthcheck_path, listen_ports }` (see above) | `object` | `null` |
 | `namespace_labels` | Extra labels merged onto the namespace | `map(string)` | `{}` |
+| `labels` | Extra labels merged onto every resource of each process, pod template included (namespace labels do not propagate to pods) | `map(string)` | `{}` |
 | `datadog_enabled` | Datadog UST tags + log annotations on every process | `bool` | `false` |
 | `datadog_service` | Datadog service tag (defaults to `name`) | `string` | `null` |
 | `datadog_env` | Datadog env tag (defaults to `environment`) | `string` | `null` |
