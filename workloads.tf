@@ -73,6 +73,8 @@ module "process" {
   ingress_annotations = each.value.web && each.value.scale_to_zero == null ? var.ingress_annotations : {}
   alb                 = each.value.web && each.value.scale_to_zero == null ? var.alb : null
 
+  labels = var.labels
+
   datadog_enabled  = var.datadog_enabled
   datadog_ust_tags = local.datadog_ust_tags
   datadog_log_config = {

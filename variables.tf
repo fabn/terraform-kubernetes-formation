@@ -343,6 +343,19 @@ variable "namespace_labels" {
   default     = {}
 }
 
+# Deliberately separate from namespace_labels: a namespace label does not
+# propagate to the objects inside it, and several consumers of Kubernetes
+# metadata only ever read the pod. AWS EKS split cost allocation is the
+# motivating one — it copies *pod* labels into the Cost and Usage Report, which
+# is the only place per-pod spend exists, so a cost allocation tag on the
+# namespace attributes nothing. Same shape as the addons, whose `labels` input
+# already reaches their pod templates.
+variable "labels" {
+  description = "Extra labels merged onto every resource of each process, pod template included. For metadata that must reach the pods themselves — cost allocation tags, ownership keys — since `namespace_labels` stops at the namespace."
+  type        = map(string)
+  default     = {}
+}
+
 variable "datadog_enabled" {
   description = "Enable Datadog UST tags + log collection annotations on every process."
   type        = bool

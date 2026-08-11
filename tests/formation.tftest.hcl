@@ -564,3 +564,49 @@ run "termination_grace_period_passthrough" {
     error_message = "A process that sets no grace period should not render the field at all"
   }
 }
+
+# Test: extra pod labels reach every process, and stay off by default
+run "pod_labels" {
+  command = plan
+
+  variables {
+    labels = { Customer = "acme", "example.com/tier" = "gold" }
+  }
+
+  # Every process, not just the web one: attribution that skips the workers
+  # under-reports whatever it is measuring.
+  assert {
+    condition = alltrue([
+      for p in ["web", "worker"] :
+      module.process[p].deployment.spec[0].template[0].metadata[0].labels["Customer"] == "acme"
+    ])
+    error_message = "Extra labels should land on the pod template of every process"
+  }
+
+  # The pod template is the part that matters for anything reading pod
+  # metadata, but the workload module applies them to its other objects too.
+  assert {
+    condition     = module.process["web"].deployment.metadata[0].labels["example.com/tier"] == "gold"
+    error_message = "Extra labels should also land on the Deployment itself"
+  }
+
+  # The module's own labels must survive the merge — losing part-of or
+  # managed-by would break selectors and ownership queries.
+  assert {
+    condition = (
+      module.process["web"].deployment.spec[0].template[0].metadata[0].labels["app.kubernetes.io/name"] == "myapp" &&
+      module.process["web"].deployment.spec[0].template[0].metadata[0].labels["app.kubernetes.io/managed-by"] == "terraform"
+    )
+    error_message = "Extra labels should merge with the standard labels, not replace them"
+  }
+}
+
+# Test: no extra labels leaves the rendered manifest untouched
+run "pod_labels_absent_by_default" {
+  command = plan
+
+  assert {
+    condition     = !contains(keys(module.process["web"].deployment.spec[0].template[0].metadata[0].labels), "Customer")
+    error_message = "An unset `labels` should add nothing to the pod template"
+  }
+}
