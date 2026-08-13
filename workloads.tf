@@ -27,6 +27,7 @@ module "process" {
   command = each.value.command
   args    = each.value.args
   ports   = each.value.ports
+  volumes = each.value.volumes
 
   service_type = each.value.web ? "ClusterIP" : null
 

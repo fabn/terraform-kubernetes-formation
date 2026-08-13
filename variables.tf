@@ -64,6 +64,19 @@ variable "formation" {
     ports              = optional(map(number), {})
     startup_probe_path = optional(string)
     http_probe_path    = optional(string)
+    # Passed through to fabn/workload/kubernetes. The claim stays the caller's:
+    # it outlives the process that mounts it, and a module owning it would
+    # destroy data on a rename. A directory shared by replicas needs an RWX class.
+    volumes = optional(list(object({
+      name                    = string
+      mount_path              = string
+      sub_path                = optional(string)
+      read_only               = optional(bool, false)
+      secret                  = optional(string)
+      config_map              = optional(string)
+      persistent_volume_claim = optional(string)
+      mode                    = optional(string)
+    })), [])
     # Named port the probes target — a key of this process's `ports` map.
     # Left unset it resolves to "http" (the fabn/workload/kubernetes default),
     # which is what the web process wants. It exists for non-web processes that
