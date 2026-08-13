@@ -277,6 +277,7 @@ non-prod idle environments. The rendered objects and every knob:
 | `startup_probe_path` | HTTP startup probe path | `string` | `null` |
 | `http_probe_path` | HTTP liveness/readiness probe path | `string` | `null` |
 | `probe_port` | Named port the probes target; must be a key of this process's `ports`. Unset resolves to `"http"`, which is what the web process wants — set it for a process serving health on another named port. | `string` | `null` (⇒ `"http"`) |
+| `volumes` | Volumes mounted into this process, passed through to `fabn/workload/kubernetes`: `{ name, mount_path, sub_path?, read_only?, secret?, config_map?, persistent_volume_claim?, mode? }`. The claim is **not** created here — it outlives the process that mounts it, and a module owning it would destroy data on a rename. For applications that keep a writable directory anyway (a CMS storing uploads under its document root); one shared across replicas needs an RWX class. | `list(object(...))` | `[]` |
 | `startup_probe_timeout_seconds` | startupProbe timeoutSeconds — more permissive than k8s (1) for cold Rails boots | `number` | `5` |
 | `startup_probe_failure_threshold` | startupProbe failureThreshold — long startup budget for slow starts | `number` | `30` |
 | `probe_timeout_seconds` | liveness/readiness timeoutSeconds — tolerates transient spikes | `number` | `3` |

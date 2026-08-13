@@ -610,3 +610,41 @@ run "pod_labels_absent_by_default" {
     error_message = "An unset `labels` should add nothing to the pod template"
   }
 }
+
+# Test: volumes reach the pod template, and only the process that declares them
+run "volumes_passthrough" {
+  command = plan
+
+  variables {
+    formation = {
+      web = {
+        web   = true
+        ports = { http = 3000 }
+        volumes = [{
+          name                    = "uploads"
+          mount_path              = "/var/www/html/web/app/uploads"
+          persistent_volume_claim = "myapp-uploads"
+        }]
+      }
+      worker = {
+        args = ["bundle", "exec", "sidekiq"]
+      }
+    }
+  }
+
+  assert {
+    condition     = one(module.process["web"].deployment.spec[0].template[0].spec[0].volume).persistent_volume_claim[0].claim_name == "myapp-uploads"
+    error_message = "The declared claim should be mounted as a pod volume"
+  }
+
+  assert {
+    condition     = one([for mount in module.process["web"].deployment.spec[0].template[0].spec[0].container[0].volume_mount : mount.mount_path if mount.name == "uploads"]) == "/var/www/html/web/app/uploads"
+    error_message = "The volume should be mounted into the container at the declared path"
+  }
+
+  # Per process, not per formation: a worker declaring none mounts none.
+  assert {
+    condition     = length(module.process["worker"].deployment.spec[0].template[0].spec[0].volume) == 0
+    error_message = "A process declaring no volumes should get none"
+  }
+}
