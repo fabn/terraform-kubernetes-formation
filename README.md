@@ -48,6 +48,10 @@ the building block it composes.
   equivalent — a Job that inherits the runtime environment of a deployed
   process (envFrom, pull secrets, service account) to run a one-shot command
   (migrations, seeds, arbitrary tasks)
+- **Scheduled tasks**: the `cron` submodule is the `heroku scheduler`
+  equivalent and the recurring counterpart of `run` — a CronJob inheriting the
+  same runtime environment, for periodic work that is a *command* rather than a
+  long-running process (a formation entry would restart it in a loop instead)
 
 ## Usage
 
