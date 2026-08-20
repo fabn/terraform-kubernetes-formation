@@ -69,3 +69,47 @@ Service's endpoints and of its PodDisruptionBudget — live traffic routed to a
 pod running a batch command, and a disruption controller that cannot resolve a
 Job's `scale` subresource. The relationship stays discoverable through
 `app.kubernetes.io/part-of`.
+
+## Extra pod labels (`pod_labels`)
+
+`pod_labels` is merged onto the **pod template inside `jobTemplate`** only —
+not onto the CronJob and not onto the Job. That is the level a mutating
+admission webhook works at: it sees the Pod at create time, so a label sitting
+on the CronJob never reaches the object being admitted.
+
+The module's four `app.kubernetes.io/*` labels are merged last and always win,
+so nothing passed here can put the Deployment's identity back on a tick pod
+(see [Naming](#naming) for what that would break).
+
+### Datadog tracing on every tick
+
+With the Datadog admission controller in the cluster, one label is what turns a
+tick pod into a traced one — the webhook mounts the agent's `/var/run/datadog`
+hostPath, sets `DD_TRACE_AGENT_URL` to the socket, and injects `DD_SERVICE` /
+`DD_ENV` from the UST labels:
+
+```hcl
+module "scheduler" {
+  source  = "fabn/formation/kubernetes//modules/cron"
+  version = "~> 0.13"
+
+  namespace  = module.app.namespace
+  deployment = module.app.web_deployment_name
+  image      = "ghcr.io/acme/myapp:1.2.3"
+
+  schedule = "*/5 * * * *"
+  command  = ["/bin/bash", "-lc", "bin/rails runner Scheduler.tick"]
+
+  pod_labels = {
+    "admission.datadoghq.com/enabled" = "true"
+    "tags.datadoghq.com/service"      = "myapp"
+    "tags.datadoghq.com/env"          = "production"
+  }
+
+  depends_on = [module.app]
+}
+```
+
+Without it, the only way to trace a scheduled task was to point
+`DD_TRACE_AGENT_URL` at the agent's Service by hand through `env` — a
+workaround that bypasses the socket and the UST injection.

@@ -58,6 +58,17 @@ locals {
     "app.kubernetes.io/part-of"    = var.deployment
     "app.kubernetes.io/managed-by" = "terraform"
   }
+
+  # Extra labels for the tick pods only. A mutating admission webhook acts on
+  # the Pod at create time, so a label on the CronJob or on the Job never
+  # reaches it — Datadog's `admission.datadoghq.com/enabled = "true"` is the
+  # motivating case: with it, every tick pod gets the agent's hostPath volume,
+  # `DD_TRACE_AGENT_URL` on the socket and the UST tags injected, instead of the
+  # caller hand-wiring `DD_TRACE_AGENT_URL` at the agent's Service through
+  # `env`. `local.labels` is merged last on purpose: the four identity keys
+  # above are what keeps a tick pod out of the Deployment's Service, PDB and
+  # ServiceMonitor selectors, so they must not be overridable from the outside.
+  pod_labels = merge(var.pod_labels, local.labels)
 }
 
 resource "kubernetes_cron_job_v1" "cron" {
@@ -88,7 +99,7 @@ resource "kubernetes_cron_job_v1" "cron" {
 
         template {
           metadata {
-            labels = local.labels
+            labels = local.pod_labels
           }
 
           spec {

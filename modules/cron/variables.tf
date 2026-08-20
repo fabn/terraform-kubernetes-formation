@@ -107,6 +107,16 @@ variable "env" {
   default     = {}
 }
 
+# Pod-template only, and unable to win over the module's own labels: the four
+# `app.kubernetes.io/*` keys are re-merged last (see main.tf). The CronJob and
+# the Job keep the module's labels untouched, because the label that matters to
+# a pod-level admission webhook is the one on the pod it creates.
+variable "pod_labels" {
+  description = "Extra labels merged onto the pod template of every tick, not onto the CronJob or the Job. For metadata read by pod-level admission webhooks — `admission.datadoghq.com/enabled = \"true\"` is the motivating one. The module's own `app.kubernetes.io/*` labels always win over these."
+  type        = map(string)
+  default     = {}
+}
+
 variable "cpu_requests" {
   description = "CPU request for the tick container."
   type        = string
