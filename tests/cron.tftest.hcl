@@ -108,6 +108,103 @@ run "named_apart_from_the_deployment" {
   }
 }
 
+# Test: extra pod labels land on the pod template inside jobTemplate — the
+# level a mutating admission webhook (Datadog's, here) actually sees — without
+# leaking onto the CronJob or the Job, and without displacing the identity
+# labels that keep tick pods out of the Deployment's selectors.
+run "pod_labels_reach_the_tick_pods_only" {
+  command = plan
+
+  module {
+    source = "./modules/cron"
+  }
+
+  variables {
+    name = "scheduler"
+    pod_labels = {
+      "admission.datadoghq.com/enabled" = "true"
+      "tags.datadoghq.com/service"      = "myapp"
+    }
+  }
+
+  assert {
+    condition = (
+      kubernetes_cron_job_v1.cron.spec[0].job_template[0].spec[0].template[0].metadata[0].labels["admission.datadoghq.com/enabled"] == "true" &&
+      kubernetes_cron_job_v1.cron.spec[0].job_template[0].spec[0].template[0].metadata[0].labels["tags.datadoghq.com/service"] == "myapp"
+    )
+    error_message = "pod_labels should land on the pod template inside jobTemplate"
+  }
+
+  assert {
+    condition = !contains(
+      keys(kubernetes_cron_job_v1.cron.metadata[0].labels),
+      "admission.datadoghq.com/enabled"
+    )
+    error_message = "pod_labels should not reach the CronJob's own labels"
+  }
+
+  assert {
+    condition = !contains(
+      keys(kubernetes_cron_job_v1.cron.spec[0].job_template[0].metadata[0].labels),
+      "admission.datadoghq.com/enabled"
+    )
+    error_message = "pod_labels should not reach the Job template's labels"
+  }
+
+  # The four identity labels must survive the merge untouched: they are what
+  # keeps a tick pod out of the Deployment's Service, PDB and ServiceMonitor.
+  assert {
+    condition = (
+      kubernetes_cron_job_v1.cron.spec[0].job_template[0].spec[0].template[0].metadata[0].labels["app.kubernetes.io/name"] == "myapp-scheduler" &&
+      kubernetes_cron_job_v1.cron.spec[0].job_template[0].spec[0].template[0].metadata[0].labels["app.kubernetes.io/component"] == "scheduler" &&
+      kubernetes_cron_job_v1.cron.spec[0].job_template[0].spec[0].template[0].metadata[0].labels["app.kubernetes.io/part-of"] == "myapp" &&
+      kubernetes_cron_job_v1.cron.spec[0].job_template[0].spec[0].template[0].metadata[0].labels["app.kubernetes.io/managed-by"] == "terraform"
+    )
+    error_message = "pod_labels should merge with the standard labels, not replace them"
+  }
+}
+
+# Test: pod_labels cannot hand a tick pod the Deployment's identity, however it
+# is spelled — the module's own labels are merged last
+run "pod_labels_cannot_override_the_identity_labels" {
+  command = plan
+
+  module {
+    source = "./modules/cron"
+  }
+
+  variables {
+    pod_labels = {
+      "app.kubernetes.io/name"       = "myapp"
+      "app.kubernetes.io/managed-by" = "somebody-else"
+    }
+  }
+
+  assert {
+    condition = (
+      kubernetes_cron_job_v1.cron.spec[0].job_template[0].spec[0].template[0].metadata[0].labels["app.kubernetes.io/name"] == "myapp-cron" &&
+      kubernetes_cron_job_v1.cron.spec[0].job_template[0].spec[0].template[0].metadata[0].labels["app.kubernetes.io/managed-by"] == "terraform"
+    )
+    error_message = "pod_labels must not be able to override the app.kubernetes.io/* labels"
+  }
+}
+
+# Test: unset pod_labels leaves the rendered pod template as it was
+run "pod_labels_absent_by_default" {
+  command = plan
+
+  module {
+    source = "./modules/cron"
+  }
+
+  assert {
+    condition = length(
+      kubernetes_cron_job_v1.cron.spec[0].job_template[0].spec[0].template[0].metadata[0].labels
+    ) == 4
+    error_message = "An unset pod_labels should add nothing to the pod template"
+  }
+}
+
 # Test: the defaults that keep a slow tick from compounding
 run "safe_scheduling_defaults" {
   command = plan
