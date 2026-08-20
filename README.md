@@ -46,8 +46,8 @@ the building block it composes.
   (the in-cluster twin of the managed [`fabn/addons/aws`](https://registry.terraform.io/modules/fabn/addons/aws))
 - **One-off Jobs**: the `run` submodule is the `heroku run` / release-phase
   equivalent — a Job that inherits the runtime environment of a deployed
-  process (envFrom, pull secrets, service account) to run a one-shot command
-  (migrations, seeds, arbitrary tasks)
+  process (envFrom, pull secrets, service account and the volumes its container
+  mounts) to run a one-shot command (migrations, seeds, arbitrary tasks)
 - **Scheduled tasks**: the `cron` submodule is the `heroku scheduler`
   equivalent and the recurring counterpart of `run` — a CronJob inheriting the
   same runtime environment, for periodic work that is a *command* rather than a
@@ -370,9 +370,10 @@ module source.
 
 [`modules/run`](modules/run) is the `heroku run` / release-phase equivalent: a Job
 that inherits the runtime environment of a deployed process (its `envFrom` —
-content-hash-suffixed Secret/ConfigMap and addon vars included — plus pull secrets
-and service account) and runs a one-shot command. `image` and `command` stay
-explicit, so a release pins the artifact it is releasing:
+content-hash-suffixed Secret/ConfigMap and addon vars included — plus pull secrets,
+service account and the volumes its container mounts) and runs a one-shot command.
+`image` and `command` stay explicit, so a release pins the artifact it is
+releasing:
 
 ```hcl
 module "migrate" {
@@ -391,7 +392,12 @@ module "migrate" {
 
 The Job defaults to one-shot semantics and `wait_for_completion = true`, so
 `terraform apply` blocks on the run and fails when it does — the natural gate for
-release pipelines. Inputs, defaults and caveats: [`modules/run`](modules/run).
+release pipelines. Volumes are inherited by default in both submodules
+(`inherit_volumes = false` opts out, `volumes` adds to or overrides what was
+inherited): a run or a tick without the process's storage reads an empty
+directory and writes into a layer that is discarded, and neither raises anything.
+Inputs, defaults and caveats: [`modules/run`](modules/run) and
+[`modules/cron`](modules/cron).
 
 ## Examples
 

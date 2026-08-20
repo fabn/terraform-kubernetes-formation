@@ -21,8 +21,12 @@ a uniform contract — outputs `env` (plaintext config) and `sensitive_env`
 services are new addon modules, never new toggles in the core.
 
 One-off tasks (`heroku run` / release-phase equivalent) are the `run`
-submodule: a Job that inherits envFrom / pull secrets / service account from a
-live Deployment while the image and command stay explicit inputs.
+submodule and scheduled ones the `cron` submodule: a Job / CronJob that inherits
+envFrom, pull secrets, service account and the mounted volumes from a live
+Deployment while the image and command stay explicit inputs. Volumes are
+inherited by default — the failure mode of not inheriting them is silent (an
+empty directory at a path the image creates anyway, writes discarded with the
+pod), while inheriting one that cannot be mounted only leaves the pod Pending.
 
 ## Contribution Conventions
 
@@ -193,7 +197,8 @@ lefthook run validate-all
 │   ├── memcached/       # memcached on fabn/workload/kubernetes, ephemeral
 │   ├── addons/          # Wrapper: sizes postgres/redis/memcached behind one map
 │   ├── keda-http/       # Per-app KEDA HTTP scale-to-zero for the web process
-│   └── run/             # One-off Job (heroku run / release phase equivalent)
+│   ├── run/             # One-off Job (heroku run / release phase equivalent)
+│   └── cron/            # Scheduled CronJob (heroku scheduler equivalent)
 │
 ├── examples/            # Usage examples
 │   ├── minimal/

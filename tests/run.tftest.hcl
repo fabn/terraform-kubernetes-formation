@@ -2,8 +2,8 @@
 # Run Submodule Tests
 # =============================================================================
 # One-off Jobs inherit their runtime environment (envFrom, imagePullSecrets,
-# serviceAccountName) from a live Deployment; the Deployment read is stubbed
-# with override_data.
+# serviceAccountName and the volumes its container mounts) from a live
+# Deployment; the Deployment read is stubbed with override_data.
 
 mock_provider "kubernetes" {}
 
@@ -26,11 +26,26 @@ override_data {
           spec = {
             serviceAccountName = "myapp"
             imagePullSecrets   = [{ name = "myapp-registry-pull-abc123" }]
+            # The pod template comes back from the API defaulted, hence the
+            # `mountPropagation` the module is expected to normalise away, and
+            # the decimal `defaultMode` (420 == 0644) it must render back as the
+            # octal string the provider takes.
+            volumes = [
+              { name = "uploads", persistentVolumeClaim = { claimName = "myapp-uploads" } },
+              { name = "tls", secret = { secretName = "myapp-tls", defaultMode = 420 } },
+              { name = "tmp", emptyDir = { medium = "Memory", sizeLimit = "64Mi" } },
+              { name = "unmounted", persistentVolumeClaim = { claimName = "myapp-elsewhere" } },
+            ]
             containers = [{
               name = "myapp"
               envFrom = [
                 { secretRef = { name = "myapp-secrets-abc123" } },
                 { configMapRef = { name = "myapp-config-def456" } },
+              ]
+              volumeMounts = [
+                { name = "uploads", mountPath = "/var/www/html/web/app/uploads", mountPropagation = "None" },
+                { name = "tls", mountPath = "/etc/tls", readOnly = true, mountPropagation = "None" },
+                { name = "tmp", mountPath = "/tmp", mountPropagation = "None" },
               ]
             }]
           }
@@ -276,6 +291,11 @@ run "bare_deployment" {
     condition     = length(kubernetes_job_v1.run.spec[0].template[0].spec[0].image_pull_secrets) == 0
     error_message = "No pull secrets should be produced for a Deployment without them"
   }
+
+  assert {
+    condition     = length(kubernetes_job_v1.run.spec[0].template[0].spec[0].volume) == 0
+    error_message = "No volume should be produced for a Deployment without any"
+  }
 }
 
 # Test: an empty command is rejected
@@ -291,4 +311,363 @@ run "validation_rejects_empty_command" {
   }
 
   expect_failures = [var.command]
+}
+
+# =============================================================================
+# Volumes
+# =============================================================================
+
+# Test: the Job pod mounts the volumes the process's own container mounts, at
+# the same paths. Without this a run reads the image's own empty directory at
+# the mount path and writes into the container's ephemeral layer — silently,
+# because the path exists either way.
+run "inherits_the_process_volumes" {
+  command = plan
+
+  module {
+    source = "./modules/run"
+  }
+
+  assert {
+    condition = one([
+      for volume in kubernetes_job_v1.run.spec[0].template[0].spec[0].volume :
+      volume.persistent_volume_claim[0].claim_name if volume.name == "uploads"
+    ]) == "myapp-uploads"
+    error_message = "The Job pod should carry the claim the process mounts"
+  }
+
+  assert {
+    condition = one([
+      for mount in kubernetes_job_v1.run.spec[0].template[0].spec[0].container[0].volume_mount :
+      mount.mount_path if mount.name == "uploads"
+    ]) == "/var/www/html/web/app/uploads"
+    error_message = "The claim should be mounted at the path the process mounts it at"
+  }
+
+  # defaultMode comes back from the API as the decimal 420 and has to be
+  # rendered as the octal string the provider takes, or 420 is read as octal.
+  assert {
+    condition = one([
+      for volume in kubernetes_job_v1.run.spec[0].template[0].spec[0].volume :
+      volume.secret[0].default_mode if volume.name == "tls"
+    ]) == "0644"
+    error_message = "An inherited secret volume should keep its defaultMode, converted to octal"
+  }
+
+  assert {
+    condition = one([
+      for mount in kubernetes_job_v1.run.spec[0].template[0].spec[0].container[0].volume_mount :
+      mount.read_only if mount.name == "tls"
+    ]) == true
+    error_message = "An inherited read-only mount should stay read-only"
+  }
+
+  # A fresh per-run emptyDir is the ephemeral dyno filesystem, correctly
+  # reproduced — but a tmpfs must stay a tmpfs.
+  assert {
+    condition = one([
+      for volume in kubernetes_job_v1.run.spec[0].template[0].spec[0].volume :
+      volume.empty_dir[0].medium if volume.name == "tmp"
+    ]) == "Memory"
+    error_message = "An inherited emptyDir should keep its medium"
+  }
+
+  # A pod volume the container does not mount carries no path to reproduce it
+  # at, so it is not inherited.
+  assert {
+    condition = length([
+      for volume in kubernetes_job_v1.run.spec[0].template[0].spec[0].volume :
+      volume.name if volume.name == "unmounted"
+    ]) == 0
+    error_message = "A pod volume the process's container does not mount should not be inherited"
+  }
+}
+
+# Test: the init container shares the mounts, the way it already shares the env
+run "init_container_gets_the_same_mounts" {
+  command = plan
+
+  module {
+    source = "./modules/run"
+  }
+
+  variables {
+    init_command = ["/bin/bash", "-lc", "until pg_isready -t 5; do sleep 2; done"]
+  }
+
+  assert {
+    condition = one([
+      for mount in kubernetes_job_v1.run.spec[0].template[0].spec[0].init_container[0].volume_mount :
+      mount.mount_path if mount.name == "uploads"
+    ]) == "/var/www/html/web/app/uploads"
+    error_message = "The init container should mount the inherited volumes too"
+  }
+
+  assert {
+    condition     = length(kubernetes_job_v1.run.spec[0].template[0].spec[0].init_container[0].volume_mount) == length(kubernetes_job_v1.run.spec[0].template[0].spec[0].container[0].volume_mount)
+    error_message = "The init container should see the same mounts as the main container"
+  }
+}
+
+# Test: `volumes` adds to what was inherited rather than replacing it
+run "extra_volumes_are_additive" {
+  command = plan
+
+  module {
+    source = "./modules/run"
+  }
+
+  variables {
+    volumes = [{
+      name       = "scratch"
+      mount_path = "/scratch"
+    }]
+  }
+
+  assert {
+    condition     = length(kubernetes_job_v1.run.spec[0].template[0].spec[0].volume) == 4
+    error_message = "An extra volume should be added to the three inherited ones"
+  }
+
+  assert {
+    condition = length(one([
+      for volume in kubernetes_job_v1.run.spec[0].template[0].spec[0].volume :
+      volume.empty_dir if volume.name == "scratch"
+    ])) == 1
+    error_message = "A volume declaring no source should render an emptyDir"
+  }
+
+  assert {
+    condition = one([
+      for volume in kubernetes_job_v1.run.spec[0].template[0].spec[0].volume :
+      volume.persistent_volume_claim[0].claim_name if volume.name == "uploads"
+    ]) == "myapp-uploads"
+    error_message = "The inherited volumes should survive an extra one"
+  }
+}
+
+# Test: an entry of the same name replaces the inherited volume, so a run can
+# swap a claim or a path without giving up the rest
+run "extra_volumes_override_an_inherited_name" {
+  command = plan
+
+  module {
+    source = "./modules/run"
+  }
+
+  variables {
+    volumes = [{
+      name                    = "uploads"
+      mount_path              = "/var/www/html/web/app/uploads"
+      persistent_volume_claim = "myapp-uploads-readonly"
+      read_only               = true
+    }]
+  }
+
+  assert {
+    condition     = length(kubernetes_job_v1.run.spec[0].template[0].spec[0].volume) == 3
+    error_message = "An entry of an inherited name should replace it, not duplicate it"
+  }
+
+  assert {
+    condition = one([
+      for volume in kubernetes_job_v1.run.spec[0].template[0].spec[0].volume :
+      volume.persistent_volume_claim[0].claim_name if volume.name == "uploads"
+    ]) == "myapp-uploads-readonly"
+    error_message = "The declared claim should win over the inherited one"
+  }
+}
+
+# Test: inheritance is switchable off for the caller it is wrong for, and
+# `volumes` still works on its own
+run "inheritance_can_be_disabled" {
+  command = plan
+
+  module {
+    source = "./modules/run"
+  }
+
+  variables {
+    inherit_volumes = false
+    volumes = [{
+      name                    = "backups"
+      mount_path              = "/backups"
+      persistent_volume_claim = "myapp-backups"
+    }]
+  }
+
+  assert {
+    condition     = length(kubernetes_job_v1.run.spec[0].template[0].spec[0].volume) == 1
+    error_message = "inherit_volumes = false should leave only the declared volumes"
+  }
+
+  assert {
+    condition     = kubernetes_job_v1.run.spec[0].template[0].spec[0].volume[0].name == "backups"
+    error_message = "The declared volume should still be mounted with inheritance off"
+  }
+}
+
+# Test: a volume source the module cannot reproduce fails the plan instead of
+# being dropped — a silently missing mount is the defect this inheritance
+# exists to close
+run "unsupported_volume_source_fails_the_plan" {
+  command = plan
+
+  module {
+    source = "./modules/run"
+  }
+
+  override_data {
+    target = data.kubernetes_resource.deployment
+    values = {
+      object = {
+        spec = {
+          template = {
+            spec = {
+              volumes = [{ name = "docker-socket", hostPath = { path = "/var/run/docker.sock" } }]
+              containers = [{
+                name         = "myapp"
+                volumeMounts = [{ name = "docker-socket", mountPath = "/var/run/docker.sock" }]
+              }]
+            }
+          }
+        }
+      }
+    }
+  }
+
+  expect_failures = [kubernetes_job_v1.run]
+}
+
+# Test: two sources on one volume are rejected at plan time
+run "validation_rejects_two_volume_sources" {
+  command = plan
+
+  module {
+    source = "./modules/run"
+  }
+
+  variables {
+    volumes = [{
+      name                    = "confused"
+      mount_path              = "/confused"
+      secret                  = "myapp-tls"
+      persistent_volume_claim = "myapp-uploads"
+    }]
+  }
+
+  expect_failures = [var.volumes]
+}
+
+# =============================================================================
+# Pod labels
+# =============================================================================
+
+# Test: pod_labels reach the Job's pod template only — a mutating admission
+# webhook sees the Pod at create time, so a label on the Job never reaches the
+# object being admitted
+run "pod_labels_reach_the_run_pod_only" {
+  command = plan
+
+  module {
+    source = "./modules/run"
+  }
+
+  variables {
+    pod_labels = {
+      "admission.datadoghq.com/enabled" = "true"
+      "tags.datadoghq.com/service"      = "myapp"
+    }
+  }
+
+  assert {
+    condition     = kubernetes_job_v1.run.spec[0].template[0].metadata[0].labels["admission.datadoghq.com/enabled"] == "true"
+    error_message = "pod_labels should land on the pod template"
+  }
+
+  assert {
+    condition     = kubernetes_job_v1.run.spec[0].template[0].metadata[0].labels["tags.datadoghq.com/service"] == "myapp"
+    error_message = "Every pod label should land on the pod template"
+  }
+
+  assert {
+    condition     = !contains(keys(kubernetes_job_v1.run.metadata[0].labels), "admission.datadoghq.com/enabled")
+    error_message = "pod_labels should not be copied onto the Job itself"
+  }
+}
+
+# Test: pod_labels cannot put the Deployment's identity back on a run pod —
+# that is what would make it a member of the web Service's endpoints and of the
+# Deployment's PodDisruptionBudget
+run "pod_labels_cannot_override_the_identity_labels" {
+  command = plan
+
+  module {
+    source = "./modules/run"
+  }
+
+  variables {
+    pod_labels = {
+      "app.kubernetes.io/name"      = "myapp"
+      "app.kubernetes.io/component" = "web"
+    }
+  }
+
+  assert {
+    condition     = kubernetes_job_v1.run.spec[0].template[0].metadata[0].labels["app.kubernetes.io/name"] == "myapp-run"
+    error_message = "The module's own name label must win over pod_labels"
+  }
+
+  assert {
+    condition     = kubernetes_job_v1.run.spec[0].template[0].metadata[0].labels["app.kubernetes.io/component"] == "run"
+    error_message = "The module's own component label must win over pod_labels"
+  }
+}
+
+# Test: no extra pod labels by default
+run "pod_labels_absent_by_default" {
+  command = plan
+
+  module {
+    source = "./modules/run"
+  }
+
+  assert {
+    condition     = length(kubernetes_job_v1.run.spec[0].template[0].metadata[0].labels) == 4
+    error_message = "A run should carry only the module's four identity labels by default"
+  }
+}
+
+# Test: a claim the pod declares read-only stays read-only in the run, even
+# when the mount itself does not say so
+run "pod_level_read_only_claim_is_honoured" {
+  command = plan
+
+  module {
+    source = "./modules/run"
+  }
+
+  override_data {
+    target = data.kubernetes_resource.deployment
+    values = {
+      object = {
+        spec = {
+          template = {
+            spec = {
+              volumes = [{ name = "assets", persistentVolumeClaim = { claimName = "myapp-assets", readOnly = true } }]
+              containers = [{
+                name         = "myapp"
+                volumeMounts = [{ name = "assets", mountPath = "/assets" }]
+              }]
+            }
+          }
+        }
+      }
+    }
+  }
+
+  assert {
+    condition     = kubernetes_job_v1.run.spec[0].template[0].spec[0].container[0].volume_mount[0].read_only == true
+    error_message = "A claim the pod declares read-only should be mounted read-only"
+  }
 }

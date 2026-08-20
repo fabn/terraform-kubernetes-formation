@@ -4,7 +4,7 @@ variable "namespace" {
 }
 
 variable "deployment" {
-  description = "Name of the Deployment to inherit the runtime environment from: envFrom (the content-hash-named Secret/ConfigMap), imagePullSecrets and serviceAccountName are read from its pod template."
+  description = "Name of the Deployment to inherit the runtime environment from: envFrom (the content-hash-named Secret/ConfigMap), imagePullSecrets, serviceAccountName and the volumes its container mounts are read from its pod template."
   type        = string
 }
 
@@ -134,4 +134,35 @@ variable "memory_limits" {
   type        = string
   default     = "512Mi"
   nullable    = true
+}
+
+# Storage is part of the environment a tick inherits, not part of one
+# invocation's configuration — see the reasoning in main.tf.
+variable "inherit_volumes" {
+  description = "Inherit the volumes the Deployment's container mounts, at the same paths. True because the alternative fails silently: the mount path exists inside the image anyway, so a tick without the real volume reads an empty directory and writes into the container's ephemeral layer without an error anywhere. Inheriting a volume that cannot be mounted only leaves the pod Pending, which is visible in seconds. Set it to false when inheritance is wrong for a caller, and declare what the tick needs through `volumes`."
+  type        = bool
+  default     = true
+}
+
+variable "volumes" {
+  description = "Extra volumes mounted into the tick container, in the shape `fabn/workload/kubernetes` uses. Additive to what was inherited; an entry whose `name` matches an inherited volume replaces it. At most one source per entry — none renders an emptyDir. Claims are never created here."
+  type = list(object({
+    name                    = string
+    mount_path              = string
+    sub_path                = optional(string)
+    read_only               = optional(bool, false)
+    secret                  = optional(string)
+    config_map              = optional(string)
+    persistent_volume_claim = optional(string)
+    mode                    = optional(string)
+  }))
+  default = []
+
+  validation {
+    condition = alltrue([
+      for volume in var.volumes :
+      length([for source in [volume.secret, volume.config_map, volume.persistent_volume_claim] : source if source != null]) <= 1
+    ])
+    error_message = "Each volume sets at most one of secret, config_map, persistent_volume_claim; setting none renders an emptyDir."
+  }
 }
