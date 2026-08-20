@@ -671,3 +671,101 @@ run "pod_level_read_only_claim_is_honoured" {
     error_message = "A claim the pod declares read-only should be mounted read-only"
   }
 }
+
+# Test: the pod template as the API actually returns it — optional fields
+# present and set to null rather than absent. `try()` catches an error, not a
+# null, so `try(x.readOnly, false)` yields null here and the null propagates;
+# this is what broke a real apply. A key test for the source has the same
+# shape of bug and would render the claim below as an emptyDir.
+run "api_shaped_pod_template_with_null_optionals" {
+  command = plan
+
+  module {
+    source = "./modules/run"
+  }
+
+  override_data {
+    target = data.kubernetes_resource.deployment
+    values = {
+      object = {
+        spec = {
+          template = {
+            spec = {
+              volumes = [{
+                name                  = "uploads"
+                secret                = null
+                configMap             = null
+                emptyDir              = null
+                hostPath              = null
+                persistentVolumeClaim = { claimName = "myapp-uploads", readOnly = null }
+              }]
+              containers = [{
+                name = "myapp"
+                volumeMounts = [{
+                  name             = "uploads"
+                  mountPath        = "/var/www/html/web/app/uploads"
+                  subPath          = null
+                  readOnly         = null
+                  mountPropagation = "None"
+                }]
+              }]
+            }
+          }
+        }
+      }
+    }
+  }
+
+  assert {
+    condition     = kubernetes_job_v1.run.spec[0].template[0].spec[0].volume[0].persistent_volume_claim[0].claim_name == "myapp-uploads"
+    error_message = "A null-valued source key must not stop the real claim from being inherited"
+  }
+
+  assert {
+    condition     = length(kubernetes_job_v1.run.spec[0].template[0].spec[0].volume[0].empty_dir) == 0
+    error_message = "A claim whose sibling source keys are null must not be rendered as an emptyDir"
+  }
+
+  assert {
+    condition     = kubernetes_job_v1.run.spec[0].template[0].spec[0].container[0].volume_mount[0].read_only == false
+    error_message = "A null readOnly should read as false, not propagate as null"
+  }
+}
+
+# Test: an unsupported source still fails the plan when the supported keys are
+# present-and-null alongside it — the case a `keys(volume)` test gets wrong
+run "unsupported_source_detected_among_null_keys" {
+  command = plan
+
+  module {
+    source = "./modules/run"
+  }
+
+  override_data {
+    target = data.kubernetes_resource.deployment
+    values = {
+      object = {
+        spec = {
+          template = {
+            spec = {
+              volumes = [{
+                name                  = "docker-socket"
+                secret                = null
+                configMap             = null
+                emptyDir              = null
+                persistentVolumeClaim = null
+                hostPath              = { path = "/var/run/docker.sock" }
+              }]
+              containers = [{
+                name         = "myapp"
+                volumeMounts = [{ name = "docker-socket", mountPath = "/var/run/docker.sock" }]
+              }]
+            }
+          }
+        }
+      }
+    }
+  }
+
+  expect_failures = [kubernetes_job_v1.run]
+}
