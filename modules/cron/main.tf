@@ -57,11 +57,17 @@ locals {
   # volume nothing mounts carries no path to reproduce it at. Every field is
   # read by name rather than copied through, because the pod template comes back
   # from the API defaulted (`mountPropagation: "None"` sits on every mount).
+  # `try()` catches an *error*, not a null — and the API returns a pod template
+  # whose optional fields are present and null rather than absent, so
+  # `try(x.readOnly, false)` yields null there and the null propagates into
+  # whatever consumes it. Every optional scalar read here is therefore wrapped
+  # in `coalesce` (absent and null both fall through to the default) or left
+  # explicitly nullable where null is the value we want.
   inherited_mounts = var.inherit_volumes ? {
     for mount in try(local.pod_spec.containers[0].volumeMounts, []) : mount.name => {
       mount_path = mount.mountPath
       sub_path   = try(mount.subPath, null)
-      read_only  = try(mount.readOnly, false)
+      read_only  = coalesce(try(mount.readOnly, null), false)
     }
   } : {}
 
@@ -70,38 +76,57 @@ locals {
     if contains(keys(local.inherited_mounts), volume.name)
   }
 
-  # The sources this module reproduces — the ones a formation process can
-  # declare. `defaultMode` comes back as the decimal integer the API stores
-  # (420), while the provider takes the octal string the manifest was written
-  # with ("0644").
-  volume_sources = toset(["secret", "configMap", "persistentVolumeClaim", "emptyDir"])
-
-  inherited_volumes = {
+  # Which source a volume actually carries, decided by value rather than by
+  # `keys(volume)`: the same API defaulting means every source key can be
+  # present-and-null, so a key test passes for all four at once and would
+  # quietly render a hostPath as an emptyDir — the silent failure this
+  # inheritance exists to close.
+  #
+  # `defaultMode` comes back as the decimal integer the API stores (420), while
+  # the provider takes the octal string the manifest was written with ("0644").
+  inherited_volume_sources = {
     for name, volume in local.inherited_pod_volumes : name => {
-      name       = name
-      mount_path = local.inherited_mounts[name].mount_path
-      sub_path   = local.inherited_mounts[name].sub_path
-      # Read-only either way round: a claim the pod declares read-only stays
-      # read-only here even when the mount itself does not say so.
-      read_only               = local.inherited_mounts[name].read_only || try(volume.persistentVolumeClaim.readOnly, false)
       secret                  = try(volume.secret.secretName, null)
       config_map              = try(volume.configMap.name, null)
       persistent_volume_claim = try(volume.persistentVolumeClaim.claimName, null)
+      empty_dir               = try(volume.emptyDir, null) != null
       mode                    = try(format("0%o", volume.secret.defaultMode), format("0%o", volume.configMap.defaultMode), null)
       # Carried so a tmpfs stays a tmpfs: an emptyDir silently losing its
       # `medium` would be the same class of bug as not inheriting it at all.
       empty_dir_medium     = try(volume.emptyDir.medium, null)
       empty_dir_size_limit = try(volume.emptyDir.sizeLimit, null)
+      # Read-only either way round: a claim the pod declares read-only stays
+      # read-only here even when the mount itself does not say so.
+      claim_read_only = coalesce(try(volume.persistentVolumeClaim.readOnly, null), false)
     }
-    if length(setintersection(keys(volume), local.volume_sources)) > 0
+  }
+
+  reproducible_volumes = {
+    for name, source in local.inherited_volume_sources : name => source
+    if anytrue([source.secret != null, source.config_map != null, source.persistent_volume_claim != null, source.empty_dir])
+  }
+
+  inherited_volumes = {
+    for name, source in local.reproducible_volumes : name => {
+      name                    = name
+      mount_path              = local.inherited_mounts[name].mount_path
+      sub_path                = local.inherited_mounts[name].sub_path
+      read_only               = local.inherited_mounts[name].read_only || source.claim_read_only
+      secret                  = source.secret
+      config_map              = source.config_map
+      persistent_volume_claim = source.persistent_volume_claim
+      mode                    = source.mode
+      empty_dir_medium        = source.empty_dir_medium
+      empty_dir_size_limit    = source.empty_dir_size_limit
+    }
   }
 
   # Reported rather than dropped: a volume the module cannot reproduce is
   # exactly the silent gap this inheritance exists to close (see the
   # precondition on the CronJob).
   unsupported_volumes = [
-    for name, volume in local.inherited_pod_volumes : name
-    if length(setintersection(keys(volume), local.volume_sources)) == 0
+    for name, source in local.inherited_volume_sources : name
+    if !contains(keys(local.reproducible_volumes), name)
   ]
 
   # `volumes` is additive to what was inherited; an entry of the same name
