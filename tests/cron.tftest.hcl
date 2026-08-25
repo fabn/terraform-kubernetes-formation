@@ -664,3 +664,54 @@ run "unsupported_source_detected_among_null_keys" {
 
   expect_failures = [kubernetes_cron_job_v1.cron]
 }
+
+# Test: the pod template of a process that mounts nothing and pulls from a
+# registry it needs no secret for — the API returns those collections
+# present-and-null, and `try(x, [])` yields the null itself rather than the
+# fallback, so the plan used to die with "Iteration over null value" before
+# the CronJob was ever rendered. Same failure the run submodule hit on a real
+# production apply.
+run "api_shaped_pod_template_with_null_collections" {
+  command = plan
+
+  module {
+    source = "./modules/cron"
+  }
+
+  override_data {
+    target = data.kubernetes_resource.deployment
+    values = {
+      object = {
+        spec = {
+          template = {
+            spec = {
+              serviceAccountName = null
+              imagePullSecrets   = null
+              volumes            = null
+              containers = [{
+                name         = "myapp"
+                envFrom      = null
+                volumeMounts = null
+              }]
+            }
+          }
+        }
+      }
+    }
+  }
+
+  assert {
+    condition     = length(kubernetes_cron_job_v1.cron.spec[0].job_template[0].spec[0].template[0].spec[0].volume) == 0
+    error_message = "A container mounting nothing should inherit no volumes, not fail the plan"
+  }
+
+  assert {
+    condition     = length(kubernetes_cron_job_v1.cron.spec[0].job_template[0].spec[0].template[0].spec[0].container[0].env_from) == 0
+    error_message = "A null envFrom should read as no envFrom sources"
+  }
+
+  assert {
+    condition     = length(kubernetes_cron_job_v1.cron.spec[0].job_template[0].spec[0].template[0].spec[0].image_pull_secrets) == 0
+    error_message = "A null imagePullSecrets should read as no pull secrets"
+  }
+}

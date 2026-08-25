@@ -19,17 +19,38 @@ data "kubernetes_resource" "deployment" {
 }
 
 locals {
-  pod_spec = data.kubernetes_resource.deployment.object.spec.template.spec
+  pod_spec  = data.kubernetes_resource.deployment.object.spec.template.spec
+  container = try(local.pod_spec.containers[0], {})
+
+  # The API returns the pod template with its optional fields present and set
+  # to null rather than absent, and `try()` catches an *error*, not a null — so
+  # `try(x, [])` around one of these collections yields the null itself and
+  # hands it to the `for` that consumes it, failing the plan with "Iteration
+  # over null value". A container that mounts nothing and a pod with no pull
+  # secrets are the ordinary case, not an exotic one, so every optional
+  # collection is read as absent-or-null here; optional *scalars* go through
+  # `coalesce` at their use site.
+  #
+  # Neither obvious spelling of that works: the collections come back as
+  # *tuples*, so `x == null ? [] : x` fails to type-check (branches are tuples
+  # of different lengths), and `coalesce(x, [])` unifies the elements into a
+  # map of strings — which turns `defaultMode = 420` into `"420"` and every
+  # `readOnly` into a string. Filtering a one-element wrapper keeps each
+  # element's own object type.
+  pod_env_from     = flatten([for value in [try(local.container.envFrom, null)] : value if value != null])
+  pod_mounts       = flatten([for value in [try(local.container.volumeMounts, null)] : value if value != null])
+  pod_pull_secrets = flatten([for value in [try(local.pod_spec.imagePullSecrets, null)] : value if value != null])
+  pod_volumes      = flatten([for value in [try(local.pod_spec.volumes, null)] : value if value != null])
 
   # Flatten the first container's envFrom to plain ref names; either ref kind
   # may be absent on a given entry.
-  env_from = [for source in try(local.pod_spec.containers[0].envFrom, []) : {
+  env_from = [for source in local.pod_env_from : {
     prefix         = try(source.prefix, null)
     secret_ref     = try(source.secretRef.name, null)
     config_map_ref = try(source.configMapRef.name, null)
   }]
 
-  image_pull_secrets   = [for secret in try(local.pod_spec.imagePullSecrets, []) : secret.name]
+  image_pull_secrets   = [for secret in local.pod_pull_secrets : secret.name]
   service_account_name = try(local.pod_spec.serviceAccountName, null)
 
   # Volumes are inherited too, and by default. A run that reads or writes a
@@ -49,14 +70,13 @@ locals {
   # volume nothing mounts carries no path to reproduce it at. Every field is
   # read by name rather than copied through, because the pod template comes back
   # from the API defaulted (`mountPropagation: "None"` sits on every mount).
-  # `try()` catches an *error*, not a null — and the API returns a pod template
-  # whose optional fields are present and null rather than absent, so
-  # `try(x.readOnly, false)` yields null there and the null propagates into
-  # whatever consumes it. Every optional scalar read here is therefore wrapped
-  # in `coalesce` (absent and null both fall through to the default) or left
-  # explicitly nullable where null is the value we want.
+  # For the same reason as the collections above, every optional scalar read
+  # here is wrapped in `coalesce` (absent and null both fall through to the
+  # default) or left explicitly nullable where null is the value we want:
+  # `try(x.readOnly, false)` yields null on a present-and-null field and the
+  # null propagates into whatever consumes it.
   inherited_mounts = var.inherit_volumes ? {
-    for mount in try(local.pod_spec.containers[0].volumeMounts, []) : mount.name => {
+    for mount in local.pod_mounts : mount.name => {
       mount_path = mount.mountPath
       sub_path   = try(mount.subPath, null)
       read_only  = coalesce(try(mount.readOnly, null), false)
@@ -64,7 +84,7 @@ locals {
   } : {}
 
   inherited_pod_volumes = {
-    for volume in try(local.pod_spec.volumes, []) : volume.name => volume
+    for volume in local.pod_volumes : volume.name => volume
     if contains(keys(local.inherited_mounts), volume.name)
   }
 
