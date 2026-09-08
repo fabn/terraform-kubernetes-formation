@@ -9,6 +9,7 @@ locals {
 
   # Opt-in only when the web process sets scale_to_zero.
   scale_to_zero = local.web_key == null ? null : var.formation[local.web_key].scale_to_zero
+
 }
 
 module "keda_http" {
@@ -17,7 +18,7 @@ module "keda_http" {
 
   name      = local.web_key
   namespace = local.ns
-  host      = var.domain
+  hosts     = local.web_hostnames
 
   # The web workload's Deployment and Service both take the bare app name.
   target_service  = var.name

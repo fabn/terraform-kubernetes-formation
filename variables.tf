@@ -36,6 +36,27 @@ variable "domain" {
   }
 }
 
+# Hosts beyond `domain` that resolve to the same web process: a second brand,
+# a host whose routes the app selects on, an alias kept alive across a rename.
+# They share one ingress, so they cannot differ in class, annotations or
+# backend — anything that must differ needs its own stack.
+#
+# Every host has to be servable before it is listed here. With `alb`, the
+# controller resolves certificates by host and refuses to build the listener
+# while one is uncovered, which stalls every ingress in the group rather than
+# just this one.
+variable "extra_domains" {
+  description = "Additional hostnames answered by the same web ingress, beyond var.domain"
+  type        = list(string)
+  default     = []
+  nullable    = false
+
+  validation {
+    condition     = length(var.extra_domains) == 0 || var.domain != null
+    error_message = "extra_domains needs domain to be set: it extends the web ingress rather than replacing it."
+  }
+}
+
 # Heroku-style process formation: one entry per process type, deployed as an
 # instance of fabn/workload/kubernetes. At most one entry may set `web = true`
 # (a single `domain` feeds a single ingress, and the web process takes the

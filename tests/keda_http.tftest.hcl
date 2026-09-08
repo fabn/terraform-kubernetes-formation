@@ -111,3 +111,31 @@ run "production_requires_warm_floor" {
 
   expect_failures = [var.formation]
 }
+
+# A scale-to-zero web routes every host through the interceptor, not just the
+# primary one: the direct ingress is suppressed, so a host left behind here
+# would resolve to nothing.
+run "extra_domains_reach_the_interceptor" {
+  command = plan
+
+  variables {
+    extra_domains = ["alias.example.com"]
+    formation = {
+      web = {
+        web           = true
+        ports         = { http = 3000 }
+        scale_to_zero = { max_replicas = 3 }
+      }
+    }
+  }
+
+  assert {
+    condition     = local.web_hostnames == tolist(["myapp.example.com", "alias.example.com"])
+    error_message = "The interceptor should route the primary domain and every extra domain"
+  }
+
+  assert {
+    condition     = module.process["web"].ingress == null
+    error_message = "A scale-to-zero web must not also render a direct ingress"
+  }
+}

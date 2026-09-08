@@ -19,12 +19,12 @@ objects.
 ## What it renders
 
 1. **`InterceptorRoute`** (`http.keda.sh/v1beta1`), in the app namespace —
-   routes `host` to the web Service with a concurrency scaling metric and
+   routes `hosts` to the web Service with a concurrency scaling metric and
    per-route `timeouts` (readiness/request).
 2. **`ScaledObject`** (`keda.sh/v1alpha1`, `external-push` trigger), in the app
    namespace — owns the `0..N` scaling of the web Deployment, driven by the
    add-on's external scaler.
-3. **`Ingress`** in `interceptor_namespace` — puts `host` on the app's shared
+3. **`Ingress`** in `interceptor_namespace` — puts every host on the app's shared
    ALB pointing at the interceptor proxy Service. The proxy lives in that
    namespace and the ALB controller requires the Ingress in the backend
    Service's namespace, so it cannot live in the app namespace.
@@ -39,7 +39,7 @@ module "keda_http" {
 
   name            = "web"
   namespace       = "myapp-staging"
-  host            = "myapp-staging.example.com"
+  hosts           = ["myapp-staging.example.com"]
   target_service  = "myapp" # the web Service (= the web Deployment name)
   target_port     = 3000
   deployment_name = "myapp"
@@ -55,7 +55,7 @@ module "keda_http" {
 | --- | --- | --- |
 | `name` | — | InterceptorRoute name + the trigger's `interceptorRoute` reference (the web process key, e.g. `web`) |
 | `namespace` | — | App namespace holding the target Deployment/Service, the InterceptorRoute and the ScaledObject |
-| `host` | — | Public host routed through the interceptor |
+| `hosts` | — | Public hosts routed through the interceptor (at least one) |
 | `target_service` | — | Web Service the interceptor forwards ready traffic to |
 | `target_port` | — | Web Service port |
 | `deployment_name` | — | Web Deployment the ScaledObject scales `0..N` |

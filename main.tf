@@ -1,6 +1,11 @@
 locals {
   ns = var.create_namespace ? kubernetes_namespace_v1.ns[0].metadata[0].name : var.namespace
 
+  # Every host the web process answers on. Read by the direct ingress
+  # (workloads.tf) and by the interceptor (keda-http.tf), so the two cannot
+  # drift apart when a host is added while the web is scaled to zero.
+  web_hostnames = var.domain == null ? [] : concat([var.domain], var.extra_domains)
+
   datadog_service = coalesce(var.datadog_service, var.name)
   datadog_env     = coalesce(var.datadog_env, var.environment)
   datadog_ust_tags = merge(
