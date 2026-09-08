@@ -304,6 +304,7 @@ non-prod idle environments. The rendered objects and every knob:
 | Name | Description | Type | Default |
 |------|-------------|------|---------|
 | `domain` | Public hostname served by the web process ingress (required when the formation has a web process) | `string` | `null` |
+| `extra_domains` | Additional hostnames answered by the same web ingress; each must be servable (with `alb`, covered by a certificate) before it is added | `list(string)` | `[]` |
 | `create_namespace` | Create the namespace (`false` for composition roots) | `bool` | `true` |
 | `env` | Plaintext env vars for every process (ConfigMap) | `map(string)` | `{}` |
 | `secret_env` | Sensitive env vars for every process (Secret) | `map(string)` | `{}` |

@@ -69,7 +69,7 @@ module "process" {
   # interceptor Ingress (keda-http.tf) so live traffic goes through the proxy,
   # not straight to the scaled-to-zero Service. The ClusterIP Service stays —
   # it is the interceptor's forward target.
-  ingress_hostnames   = each.value.web && each.value.scale_to_zero == null ? [var.domain] : []
+  ingress_hostnames   = each.value.web && each.value.scale_to_zero == null ? local.web_hostnames : []
   ingress_class_name  = var.ingress_class_name
   ingress_annotations = each.value.web && each.value.scale_to_zero == null ? var.ingress_annotations : {}
   alb                 = each.value.web && each.value.scale_to_zero == null ? var.alb : null

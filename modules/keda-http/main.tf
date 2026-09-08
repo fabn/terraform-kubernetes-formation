@@ -39,7 +39,7 @@ resource "kubernetes_manifest" "interceptor_route" {
         service = var.target_service
         port    = var.target_port
       }
-      rules = [{ hosts = [var.host] }]
+      rules = [{ hosts = var.hosts }]
       scalingMetric = {
         concurrency = {
           targetValue = var.concurrency_target
@@ -110,17 +110,23 @@ resource "kubernetes_ingress_v1" "interceptor" {
   spec {
     ingress_class_name = var.ingress_class_name
 
-    rule {
-      host = var.host
-      http {
-        path {
-          path      = "/"
-          path_type = "Prefix"
-          backend {
-            service {
-              name = local.interceptor_proxy_service
-              port {
-                number = local.interceptor_proxy_port
+    # One rule per host: the interceptor forwards every one of them to the same
+    # proxy Service, and the route above already matches on the same set.
+    dynamic "rule" {
+      for_each = var.hosts
+
+      content {
+        host = rule.value
+        http {
+          path {
+            path      = "/"
+            path_type = "Prefix"
+            backend {
+              service {
+                name = local.interceptor_proxy_service
+                port {
+                  number = local.interceptor_proxy_port
+                }
               }
             }
           }

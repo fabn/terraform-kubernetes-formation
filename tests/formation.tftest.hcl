@@ -648,3 +648,46 @@ run "volumes_passthrough" {
     error_message = "A process declaring no volumes should get none"
   }
 }
+
+# Test: extra_domains join the primary domain on the same web ingress, in order
+run "extra_domains_on_web_ingress" {
+  command = plan
+
+  variables {
+    extra_domains = ["alias.example.com", "legacy.example.com"]
+  }
+
+  assert {
+    condition = [for r in module.process["web"].ingress.spec[0].rule : r.host] == [
+      "myapp.example.com", "alias.example.com", "legacy.example.com"
+    ]
+    error_message = "Web ingress should answer on domain first, then extra_domains in order"
+  }
+}
+
+# Test: the default keeps a single-host ingress
+run "no_extra_domains_by_default" {
+  command = plan
+
+  assert {
+    condition     = length(module.process["web"].ingress.spec[0].rule) == 1
+    error_message = "Without extra_domains the web ingress should carry exactly one host"
+  }
+}
+
+# Test: extra_domains extends a domain rather than standing in for one
+run "validation_extra_domains_requires_domain" {
+  command = plan
+
+  variables {
+    domain        = null
+    extra_domains = ["alias.example.com"]
+    formation = {
+      worker = {
+        args = ["bundle", "exec", "sidekiq"]
+      }
+    }
+  }
+
+  expect_failures = [var.extra_domains]
+}

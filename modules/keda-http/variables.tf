@@ -8,9 +8,14 @@ variable "namespace" {
   type        = string
 }
 
-variable "host" {
-  description = "Public host routed through the interceptor (the app's public domain)."
-  type        = string
+variable "hosts" {
+  description = "Public hosts routed through the interceptor. The first is the app's primary domain; the rest are its aliases."
+  type        = list(string)
+
+  validation {
+    condition     = length(var.hosts) > 0
+    error_message = "hosts must list at least one host: the interceptor routes by host and matches nothing without one."
+  }
 }
 
 variable "target_service" {
