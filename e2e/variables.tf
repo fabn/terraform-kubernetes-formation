@@ -35,6 +35,9 @@ variable "create_namespace" {
   default     = true
 }
 
+# Kept set (the images under test are public) so the harness still exercises the
+# dockerconfigjson pull secret against a real API server; the credentials are
+# optional in the module itself.
 variable "registry_username" {
   description = "Username for the registry imagePullSecret"
   type        = string

@@ -61,7 +61,7 @@ module "process" {
   memory_requests = each.value.memory_requests
   memory_limits   = each.value.memory_limits
 
-  image_pull_secrets = module.registry_credentials.name
+  image_pull_secrets = local.image_pull_secret
   secret_refs        = [module.secrets.name]
   config_map_refs    = [module.config.name]
 

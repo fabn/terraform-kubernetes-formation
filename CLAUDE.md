@@ -12,7 +12,8 @@ The core takes a Heroku-Procfile-like `formation` map; each entry becomes one
 (enforced by validation) and gets Service + Ingress + probes; every other
 process runs headless. Worker-only stacks simply omit the web entry. The
 module also creates a shared Secret/ConfigMap (content-hash named), a
-generated `SECRET_KEY_BASE` and a registry pull secret. It is framework-neutral: nothing injects `RAILS_ENV` — callers pass it
+generated `SECRET_KEY_BASE` and — only when registry credentials are given —
+a registry pull secret. It is framework-neutral: nothing injects `RAILS_ENV` — callers pass it
 via `env`.
 
 Backing services are **addons** under `modules/`: independent submodules with

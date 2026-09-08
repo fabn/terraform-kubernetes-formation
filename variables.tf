@@ -332,26 +332,43 @@ variable "secret_env" {
 }
 
 variable "registry_server" {
-  description = "Container registry host for the imagePullSecret."
+  description = "Container registry host for the imagePullSecret. Only read when registry credentials are set."
   type        = string
   default     = "ghcr.io"
 }
 
+# Optional as a pair: a public image needs no pull secret, and a stack that had
+# to invent a username/token to satisfy the module was shipping a Secret the
+# kubelet then presents on every pull — which registries are free to reject
+# outright rather than fall back to an anonymous pull.
 variable "registry_username" {
-  description = "Username for the registry imagePullSecret."
+  description = "Username for the registry imagePullSecret. Leave null (together with registry_password) for a public image: no pull secret is created and the pods carry no imagePullSecrets entry."
   type        = string
+  default     = null
+  nullable    = true
 }
 
 variable "registry_password" {
-  description = "Password/token for the registry imagePullSecret (e.g. a GitHub PAT with read:packages)."
+  description = "Password/token for the registry imagePullSecret (e.g. a GitHub PAT with read:packages). Leave null together with registry_username for a public image."
   type        = string
+  default     = null
+  nullable    = true
   sensitive   = true
+
+  # Half a credential pair is always a mistake — an unauthenticated pull the
+  # caller believed was authenticated — and it fails at plan time rather than
+  # on the first ImagePullBackOff.
+  validation {
+    condition     = (var.registry_username == null) == (var.registry_password == null)
+    error_message = "registry_username and registry_password must be set together, or both left null for a public image."
+  }
 }
 
 variable "ingress_class_name" {
-  description = "IngressClass for the web process ingress."
+  description = "IngressClass for the web process ingress. Set to null to omit the field and let the cluster's default IngressClass take the Ingress (the ALB class on EKS Auto Mode)."
   type        = string
   default     = "nginx"
+  nullable    = true
 }
 
 variable "ingress_annotations" {

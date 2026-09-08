@@ -63,9 +63,6 @@ module "app" {
 
   create_namespace = false
 
-  registry_username = "example"
-  registry_password = "example-token"
-
   formation = {
     web = {
       web   = true
