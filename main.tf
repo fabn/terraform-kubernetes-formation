@@ -6,6 +6,12 @@ locals {
   # drift apart when a host is added while the web is scaled to zero.
   web_hostnames = var.domain == null ? [] : concat([var.domain], var.extra_domains)
 
+  # The pull secret exists only when credentials were given: a public image
+  # needs none, so the workloads get a null `image_pull_secrets` and the pod
+  # spec keeps no imagePullSecrets entry at all.
+  create_registry_credentials = var.registry_username != null && var.registry_password != null
+  image_pull_secret           = one(module.registry_credentials[*].name)
+
   datadog_service = coalesce(var.datadog_service, var.name)
   datadog_env     = coalesce(var.datadog_env, var.environment)
   datadog_ust_tags = merge(
@@ -66,6 +72,8 @@ module "config" {
 module "registry_credentials" {
   source  = "fabn/workload/kubernetes//modules/secret"
   version = "~> 0.8"
+
+  count = local.create_registry_credentials ? 1 : 0
 
   namespace   = local.ns
   name_prefix = "${var.name}-registry-pull"

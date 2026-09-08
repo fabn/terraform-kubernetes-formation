@@ -12,9 +12,6 @@ module "app" {
   image       = "ealen/echo-server:latest"
   domain      = "hello.lvh.me"
 
-  registry_username = "example"
-  registry_password = "example-token"
-
   formation = {
     web = {
       web   = true

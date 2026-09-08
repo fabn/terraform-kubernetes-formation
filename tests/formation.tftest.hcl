@@ -111,6 +111,74 @@ run "shared_env_objects" {
   }
 }
 
+# Test: registry credentials are optional — a public image gets no pull secret
+run "registry_credentials_create_the_pull_secret" {
+  command = apply
+
+  assert {
+    condition     = length(module.registry_credentials) == 1
+    error_message = "Registry credentials should create the imagePullSecret"
+  }
+
+  assert {
+    condition     = startswith(local.image_pull_secret, "myapp-registry-pull-")
+    error_message = "The pull secret should be name-prefixed and content-hash suffixed"
+  }
+}
+
+run "public_image_creates_no_pull_secret" {
+  command = apply
+
+  variables {
+    registry_username = null
+    registry_password = null
+  }
+
+  assert {
+    condition     = length(module.registry_credentials) == 0
+    error_message = "No credentials should mean no imagePullSecret at all"
+  }
+
+  assert {
+    condition     = local.image_pull_secret == null
+    error_message = "Processes should get a null image_pull_secrets so the pod spec omits the field"
+  }
+}
+
+# Test: half a credential pair is rejected at plan time, not at pull time
+run "validation_rejects_username_without_password" {
+  command = plan
+
+  variables {
+    registry_password = null
+  }
+
+  expect_failures = [var.registry_password]
+}
+
+run "validation_rejects_password_without_username" {
+  command = plan
+
+  variables {
+    registry_username = null
+  }
+
+  expect_failures = [var.registry_password]
+}
+
+# Test: the web ingress class defaults to nginx. The null case (leave the class
+# to the cluster default) is exercised by `alb_ingress` below and cannot be
+# asserted by value: `ingressClassName` is optional-and-computed, so a null
+# config plans as unknown — which is the point, the cluster fills it in.
+run "ingress_class_defaults_to_nginx" {
+  command = plan
+
+  assert {
+    condition     = module.process["web"].ingress.spec[0].ingress_class_name == "nginx"
+    error_message = "The web ingress should default to the nginx class"
+  }
+}
+
 # Test: worker-only stacks are valid (no web process, no domain)
 run "worker_only_formation" {
   command = plan

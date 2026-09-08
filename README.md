@@ -66,6 +66,7 @@ module "app" {
   image       = "ghcr.io/acme/myapp:1.2.3"
   domain      = "myapp-staging.example.com"
 
+  # Private registry only — omit both for a public image.
   registry_username = var.github_username
   registry_password = var.image_pull_token
 
@@ -261,8 +262,6 @@ non-prod idle environments. The rendered objects and every knob:
 | `environment` | Logical environment name (staging, production, review-pr-123, …) | `string` |
 | `image` | Full image reference (registry/repo:tag) shared by every process | `string` |
 | `formation` | Map of process name => process spec (see below) | `map(object)` |
-| `registry_username` | Username for the registry imagePullSecret | `string` |
-| `registry_password` | Password/token for the registry imagePullSecret | `string` |
 
 ### Formation entries
 
@@ -308,8 +307,10 @@ non-prod idle environments. The rendered objects and every knob:
 | `create_namespace` | Create the namespace (`false` for composition roots) | `bool` | `true` |
 | `env` | Plaintext env vars for every process (ConfigMap) | `map(string)` | `{}` |
 | `secret_env` | Sensitive env vars for every process (Secret) | `map(string)` | `{}` |
-| `registry_server` | Container registry host | `string` | `"ghcr.io"` |
-| `ingress_class_name` | IngressClass for the web ingress (set to `null` to use the cluster default class) | `string` | `"nginx"` |
+| `registry_server` | Container registry host (only read when credentials are set) | `string` | `"ghcr.io"` |
+| `registry_username` | Username for the registry imagePullSecret. Set together with `registry_password`, or leave both null for a public image — no pull secret is created and the pods carry no `imagePullSecrets` entry | `string` | `null` |
+| `registry_password` | Password/token for the registry imagePullSecret (e.g. a GitHub PAT with `read:packages`) | `string` | `null` |
+| `ingress_class_name` | IngressClass for the web ingress (set to `null` to omit the field and let the cluster default class take the Ingress) | `string` | `"nginx"` |
 | `ingress_annotations` | Extra annotations on the web ingress | `map(string)` | `{}` |
 | `alb` | ALB termination for the web ingress: `{ load_balancer_name, healthcheck_path, listen_ports }` (see above) | `object` | `null` |
 | `namespace_labels` | Extra labels merged onto the namespace | `map(string)` | `{}` |
