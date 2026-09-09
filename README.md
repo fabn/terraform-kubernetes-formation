@@ -66,6 +66,9 @@ module "app" {
   image       = "ghcr.io/acme/myapp:1.2.3"
   domain      = "myapp-staging.example.com"
 
+  # The Ingress goes to the cluster's default IngressClass unless you name one:
+  # ingress_class_name = "nginx"
+
   # Private registry only — omit both for a public image.
   registry_username = var.github_username
   registry_password = var.image_pull_token
@@ -204,8 +207,8 @@ module "app" {
   source = "fabn/formation/kubernetes"
 
   # ...
-  domain             = "myapp.example.com" # must be covered by the ALB's ACM cert
-  ingress_class_name = null                # the ALB class is usually the cluster default
+  domain = "myapp.example.com" # must be covered by the ALB's ACM cert
+  # ingress_class_name is left unset: the ALB class is usually the cluster default
   alb = {
     load_balancer_name = "shared-external" # same value on every Ingress of a group ALB
   }
@@ -310,7 +313,7 @@ non-prod idle environments. The rendered objects and every knob:
 | `registry_server` | Container registry host (only read when credentials are set) | `string` | `"ghcr.io"` |
 | `registry_username` | Username for the registry imagePullSecret. Set together with `registry_password`, or leave both null for a public image — no pull secret is created and the pods carry no `imagePullSecrets` entry | `string` | `null` |
 | `registry_password` | Password/token for the registry imagePullSecret (e.g. a GitHub PAT with `read:packages`) | `string` | `null` |
-| `ingress_class_name` | IngressClass for the web ingress (set to `null` to omit the field and let the cluster default class take the Ingress) | `string` | `"nginx"` |
+| `ingress_class_name` | IngressClass for the web ingress. Unset omits `ingressClassName`, so the cluster's default IngressClass takes the Ingress; set it (e.g. `"nginx"`) when the class you want is not the cluster default | `string` | `null` |
 | `ingress_annotations` | Extra annotations on the web ingress | `map(string)` | `{}` |
 | `alb` | ALB termination for the web ingress: `{ load_balancer_name, healthcheck_path, listen_ports }` (see above) | `object` | `null` |
 | `namespace_labels` | Extra labels merged onto the namespace | `map(string)` | `{}` |

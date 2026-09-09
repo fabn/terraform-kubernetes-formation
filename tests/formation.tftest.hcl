@@ -166,16 +166,20 @@ run "validation_rejects_password_without_username" {
   expect_failures = [var.registry_password]
 }
 
-# Test: the web ingress class defaults to nginx. The null case (leave the class
-# to the cluster default) is exercised by `alb_ingress` below and cannot be
-# asserted by value: `ingressClassName` is optional-and-computed, so a null
-# config plans as unknown — which is the point, the cluster fills it in.
-run "ingress_class_defaults_to_nginx" {
+# Test: an explicit ingress class reaches the web ingress. The unset default is
+# what `alb_ingress` below plans through and cannot be asserted by value:
+# `ingressClassName` is optional-and-computed, so omitting it plans as unknown —
+# which is the point, the cluster's default IngressClass fills it in.
+run "ingress_class_passthrough" {
   command = plan
+
+  variables {
+    ingress_class_name = "nginx"
+  }
 
   assert {
     condition     = module.process["web"].ingress.spec[0].ingress_class_name == "nginx"
-    error_message = "The web ingress should default to the nginx class"
+    error_message = "An explicit ingress_class_name should reach the web ingress"
   }
 }
 
@@ -242,7 +246,6 @@ run "alb_ingress" {
   command = plan
 
   variables {
-    ingress_class_name = null
     alb = {
       load_balancer_name = "shared-external"
     }

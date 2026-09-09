@@ -364,10 +364,15 @@ variable "registry_password" {
   }
 }
 
+# No default class: the module has no way to know what the cluster runs, and an
+# ingress-nginx opinion baked in here was wrong on every other controller. Unset
+# omits `ingressClassName` from the manifest, which is what hands the Ingress to
+# the cluster's default IngressClass — the same contract as the underlying
+# fabn/workload/kubernetes input.
 variable "ingress_class_name" {
-  description = "IngressClass for the web process ingress. Set to null to omit the field and let the cluster's default IngressClass take the Ingress (the ALB class on EKS Auto Mode)."
+  description = "IngressClass for the web process ingress. Unset omits the field, so the cluster's default IngressClass takes the Ingress (the ALB class on EKS Auto Mode); set it explicitly (e.g. \"nginx\") when the class you want is not the cluster default."
   type        = string
-  default     = "nginx"
+  default     = null
   nullable    = true
 }
 
@@ -378,7 +383,7 @@ variable "ingress_annotations" {
 }
 
 variable "alb" {
-  description = "Configure the web process Ingress for an AWS ALB (EKS Auto Mode or AWS Load Balancer Controller), passed through to fabn/workload/kubernetes: TLS terminates on the ALB, so in-cluster TLS and the ACME annotation are suppressed. Set to {} to accept all defaults; on shared (group) ALBs set load_balancer_name, which must carry the same value on every Ingress of the group. Combine with ingress_class_name = null when the ALB class is the cluster default."
+  description = "Configure the web process Ingress for an AWS ALB (EKS Auto Mode or AWS Load Balancer Controller), passed through to fabn/workload/kubernetes: TLS terminates on the ALB, so in-cluster TLS and the ACME annotation are suppressed. Set to {} to accept all defaults; on shared (group) ALBs set load_balancer_name, which must carry the same value on every Ingress of the group. Leave ingress_class_name unset when the ALB class is the cluster default, set it to the ALB IngressClass otherwise."
   type = object({
     load_balancer_name = optional(string)
     healthcheck_path   = optional(string, "/")
