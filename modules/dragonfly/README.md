@@ -87,7 +87,8 @@ See also [`examples/dragonfly`](../../examples/dragonfly).
 | `node_affinity` | `null` | Set-based placement: `required` + `preferred` match expressions, same shape as a formation web process and as [`postgres-cnpg`](../postgres-cnpg). Rendered into `spec.affinity.nodeAffinity` |
 | `node_selector` | `{}` | Exact-match labels |
 | `tolerations` | `[]` | Tolerations for the instance pods |
-| `topology_spread_constraints` | `[]` | Spread master/replica across nodes or zones. The only spreading lever here — a hostname `DoNotSchedule` entry needs `minDomains = 2`, see below |
+| `pod_anti_affinity_type` | `null` | How hard to spread the pods across nodes: `required` (one per node) or `preferred` (soft). `null` derives it from `replicas` — `required` above one, nothing at one |
+| `topology_spread_constraints` | `[]` | Raw constraints, replacing the derived pair outright. An escape hatch; prefer `pod_anti_affinity_type` |
 | `pod_disruption_budget` | `null` | Override the PDB the operator creates on its own (`spec.pdb`): exactly one of `min_available` / `max_unavailable`, absolute (`"1"`) or percentage (`"50%"`) |
 
 #### Production block
@@ -101,19 +102,10 @@ right production answer and none of this applies.
 ```hcl
 replicas = 2 # default, but it is what makes failover possible
 
-# Hard spread per node: the operator sets no anti-affinity, so spreading is
-# entirely up to these constraints. minDomains is what makes it a real rule —
-# see the caveat below, without it a one-node pool silently co-locates both.
-topology_spread_constraints = [{
-  maxSkew           = 1
-  topologyKey       = "kubernetes.io/hostname"
-  whenUnsatisfiable = "DoNotSchedule" # ScheduleAnyway on a single-node cluster
-  minDomains        = 2
-  }, {
-  maxSkew           = 1
-  topologyKey       = "topology.kubernetes.io/zone"
-  whenUnsatisfiable = "ScheduleAnyway"
-}]
+# Spread is derived from replicas, so nothing is written here: above one
+# replica the module emits a hard one-per-node rule plus a zone preference,
+# minDomains included. On a single-node cluster, soften it:
+#   pod_anti_affinity_type = "preferred"
 
 # Keeping the master off Spot is worth more here than for a database: a reclaim
 # costs a failover and, with no snapshot, the whole dataset.
@@ -147,18 +139,42 @@ unschedulable instead, which is what a `required` pod anti-affinity would have d
 It applies only to `DoNotSchedule` (the API rejects it elsewhere), so the zone entry
 above leaves it out.
 
-One Terraform wrinkle if you gate the list on `replicas > 1`: the two entries must
-then have *identical* attributes, otherwise the true branch stays a tuple instead of
-collapsing to a `list(object)`, and a tuple of length 2 will not unify with the empty
-one (`the 'true' tuple has length 2, but the 'false' tuple has length 0` — a
-confusing message, since the lengths are not the real problem). Set `minDomains` on
-both entries; it is inert on the `ScheduleAnyway` one.
+The module now derives all of this, so the Terraform wrinkle that used to live here
+is gone — along with the workaround it recommended, which was actively harmful.
+Gating a hand-written list on `replicas > 1` does fail to typecheck (`the 'true'
+tuple has length 2, but the 'false' tuple has length 0`), but the fix is **not** to
+even up the entries by setting `minDomains` on both. `minDomains` is *not* inert
+alongside `ScheduleAnyway`: the apiserver rejects the pair outright. The Dragonfly
+CRD accepts it — its schema is looser — so the CR applies cleanly and the failure
+surfaces one layer down, where the operator patches the StatefulSet as a single
+object and has the *whole* patch rejected. One consumer lost an unrelated image pin
+that way, in the same patch, and stayed on the version it was pinning away from.
+
+Build the list whole and `slice()` it instead, which is what this module does: a
+slice of a tuple is still a tuple, so the entries stay free to carry different
+attributes.
 
 `node_affinity` is rendered into the CR's `spec.affinity`, which the operator
 copies verbatim onto the StatefulSet pod template; the operator sets no affinity of
 its own, so nothing is clobbered. Spreading stays on
 `topology_spread_constraints` — anti-affinity needs at least as many nodes as
 replicas, or the replica stays `Pending`.
+
+> **⚠️ Pin `image` if you snapshot to S3.** Dragonfly reaches S3 over IRSA — its
+> S3 client implements the OIDC web-identity flow only — and from **v1.39.0** it
+> acquires those credentials once at start-up and never refreshes them. A few
+> hours in, every save fails `ExpiredToken`. Reads are unaffected, nothing
+> restarts, the operator still reports the instance healthy: the only symptom is
+> a recovery point that stops advancing, which is invisible right up until the
+> snapshot is the only copy left. Pin `image` to a `v1.38.x` tag until a release
+> carries the fix for
+> [dragonflydb/dragonfly#7666](https://github.com/dragonflydb/dragonfly/issues/7666);
+> the module raises a check-block warning on every plan while an S3 destination
+> is set and `image` is unpinned.
+>
+> A fixed configuration does not heal a running pod — the stale credentials were
+> acquired at start-up. Restart the instances (replica first, then master) and
+> force a save on the admin port rather than waiting for the next cron tick.
 
 **Disruption budget.** The operator already creates a PodDisruptionBudget for any
 instance with more than one replica, defaulting to `maxUnavailable = 1` (and none at

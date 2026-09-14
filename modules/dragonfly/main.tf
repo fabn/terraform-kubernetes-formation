@@ -50,6 +50,59 @@ locals {
     var.cache_mode ? ["--cache_mode"] : [],
   )
 
+  # Pod spread, rendered into spec.topologySpreadConstraints (the operator copies
+  # it verbatim onto the StatefulSet; it sets no affinity of its own). Two
+  # replicas on one node are never what a caller meant — they read as HA and
+  # give none — so above one replica this defaults to a hard one-per-node rule.
+  #
+  # The failure it guards against is not losing an instance. Losing one is a
+  # non-event: the replacement replicates from the survivor and never reads a
+  # snapshot. It is losing *both at once*, which forces a cold start from
+  # whatever the last snapshot holds — and with every replica on one node, one
+  # node going away does exactly that.
+  #
+  # minDomains goes on the hostname entry alone, and only when hard. Skew is
+  # computed over *eligible* domains, so a cluster scaled to one node has one
+  # domain, skew is 0 by definition, and every replica may land on it — the very
+  # case this guards. It is also invalid alongside ScheduleAnyway: the apiserver
+  # rejects the pair outright, and since the operator patches the StatefulSet as
+  # one object, that rejection takes every unrelated field in the same patch
+  # (an image pin, a resource bump) down with it.
+  spread_mode = var.pod_anti_affinity_type != null ? var.pod_anti_affinity_type : (var.replicas > 1 ? "required" : null)
+
+  # Built whole and then sliced, never returned from a conditional: the two
+  # entries are different object types, so a ternary choosing between `[]` and
+  # the pair fails with "Inconsistent conditional result types". slice() keeps
+  # them a tuple, which is what lets them carry different attributes.
+  spread_entries = [
+    merge(
+      {
+        maxSkew           = 1
+        topologyKey       = "kubernetes.io/hostname"
+        whenUnsatisfiable = local.spread_mode == "required" ? "DoNotSchedule" : "ScheduleAnyway"
+        labelSelector     = { matchLabels = { app = var.name } }
+      },
+      local.spread_mode == "required" ? { minDomains = var.replicas } : {},
+    ),
+    {
+      # Zones stay a preference at every strength: a saturated AZ must never
+      # block scheduling, and on a single-zone cluster a hard rule is unmeetable.
+      maxSkew           = 1
+      topologyKey       = "topology.kubernetes.io/zone"
+      whenUnsatisfiable = "ScheduleAnyway"
+      labelSelector     = { matchLabels = { app = var.name } }
+    },
+  ]
+
+  derived_spread = slice(local.spread_entries, 0, local.spread_mode == null ? 0 : 2)
+
+  # Which of the two wins is decided in the spec merge below, as two mutually
+  # exclusive arguments, rather than here as one conditional: the raw input and
+  # the derived pair are tuples of different lengths, and a ternary between them
+  # is rejected outright ("The 'true' tuple has length 0, but the 'false' tuple
+  # has length 2"). Object-typed merge arguments have no such problem.
+  use_raw_spread = length(var.topology_spread_constraints) > 0
+
   # Set-based node affinity rendered into spec.affinity, which the operator copies
   # verbatim onto the StatefulSet pod template (it sets no affinity of its own, so
   # nothing is clobbered). `required` expressions are ANDed into one hard
@@ -173,7 +226,8 @@ resource "kubernetes_manifest" "dragonfly" {
       local.affinity,
       length(var.node_selector) > 0 ? { nodeSelector = var.node_selector } : {},
       length(var.tolerations) > 0 ? { tolerations = var.tolerations } : {},
-      length(var.topology_spread_constraints) > 0 ? { topologySpreadConstraints = var.topology_spread_constraints } : {},
+      local.use_raw_spread ? { topologySpreadConstraints = var.topology_spread_constraints } : {},
+      !local.use_raw_spread && length(local.derived_spread) > 0 ? { topologySpreadConstraints = local.derived_spread } : {},
       var.pod_disruption_budget != null ? { pdb = local.pdb } : {},
       local.snapshot != null ? { snapshot = local.snapshot } : {},
     )
@@ -194,4 +248,26 @@ resource "kubernetes_manifest" "dragonfly" {
   }
 
   depends_on = [kubernetes_secret_v1.auth, kubernetes_service_account_v1.instance]
+}
+
+# Dragonfly reaches S3 through IRSA — its S3 client implements the OIDC
+# web-identity flow only, so a snapshot destination means web-identity
+# credentials. From v1.39.0 those credentials are acquired once at start-up and
+# never refreshed, so every save fails `ExpiredToken` a few hours in. Reads are
+# unaffected, nothing restarts, and the operator reports the instance healthy:
+# the only symptom is a recovery point that stops advancing, which is invisible
+# right up until it is the only copy left.
+#
+# A warning and not a validation: an unpinned image is legitimate for a caller
+# with no snapshot destination, and for one who has read this and decided. It
+# cannot be a version comparison either — with `image` unset the version is
+# whatever the operator picks, which this module cannot see.
+#
+# Upstream: dragonflydb/dragonfly#7666, fixed in-tree but not yet in a release.
+# Delete this check once one carries the fix.
+check "snapshot_credentials_refresh" {
+  assert {
+    condition     = try(var.snapshot.s3_uri, null) == null || var.image != null
+    error_message = "S3 snapshots are enabled but `image` is unpinned: Dragonfly v1.39.0 and up never refresh their IRSA credentials, so snapshots silently stop with ExpiredToken a few hours after each start. Pin `image` to a v1.38.x tag until a release carries the fix for dragonflydb/dragonfly#7666."
+  }
 }
