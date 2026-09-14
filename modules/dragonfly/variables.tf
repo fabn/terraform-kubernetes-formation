@@ -216,8 +216,19 @@ variable "tolerations" {
 # constraint with minDomains — skew is measured over *eligible* domains, so with a
 # single eligible node the skew is 0 whatever lands there and the constraint stops
 # constraining, silently. See the module README.
+variable "pod_anti_affinity_type" {
+  description = "How hard to spread the instance pods across nodes: `required` (one per node, true HA) or `preferred` (soft, fits a single-node cluster). null derives it from replicas — `required` above one replica, nothing at one. Ignored when topology_spread_constraints is set."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.pod_anti_affinity_type == null || contains(["required", "preferred"], coalesce(var.pod_anti_affinity_type, "required"))
+    error_message = "pod_anti_affinity_type must be `required`, `preferred` or null."
+  }
+}
+
 variable "topology_spread_constraints" {
-  description = "topologySpreadConstraints for the instance pods (spread master/replica across nodes). A hostname DoNotSchedule entry needs minDomains = 2 to actually be one-per-node."
+  description = "Raw topologySpreadConstraints for the instance pods, replacing the ones pod_anti_affinity_type derives. An escape hatch — prefer pod_anti_affinity_type. A hostname DoNotSchedule entry needs minDomains to actually be one-per-node."
   type        = any
   default     = []
 }

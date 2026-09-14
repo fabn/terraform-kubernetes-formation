@@ -191,6 +191,9 @@ run "dragonfly_snapshot_s3" {
     namespace            = "addon-test"
     service_account_name = "dragonfly"
     snapshot             = { s3_uri = "s3://backups/cache" }
+    # Pinned only to keep the snapshot_credentials_refresh check quiet; this run
+    # is about the snapshot contract. The check has its own runs below.
+    image = "docker.dragonflydb.io/dragonflydb/dragonfly:v1.38.1"
   }
 
   assert {
@@ -494,4 +497,203 @@ run "dragonfly_rejects_empty_pdb" {
   }
 
   expect_failures = [var.pod_disruption_budget]
+}
+
+# --- pod spread -------------------------------------------------------------
+# One replica is a single-node-friendly default: no constraint at all, so the
+# spec stays byte-identical for every existing caller running one instance.
+run "dragonfly_no_spread_at_one_replica" {
+  command = apply
+
+  module {
+    source = "./modules/dragonfly"
+  }
+
+  variables {
+    namespace = "addon-test"
+    replicas  = 1
+  }
+
+  assert {
+    condition     = !can(kubernetes_manifest.dragonfly.manifest.spec.topologySpreadConstraints)
+    error_message = "a single replica should carry no topology spread"
+  }
+}
+
+# Above one replica the derived rule is hard: two instances on one node read as
+# HA and provide none.
+run "dragonfly_derives_hard_spread_above_one_replica" {
+  command = apply
+
+  module {
+    source = "./modules/dragonfly"
+  }
+
+  variables {
+    namespace = "addon-test"
+    name      = "broker"
+    replicas  = 2
+  }
+
+  assert {
+    condition     = length(kubernetes_manifest.dragonfly.manifest.spec.topologySpreadConstraints) == 2
+    error_message = "two replicas should derive a hostname and a zone constraint"
+  }
+
+  assert {
+    condition     = kubernetes_manifest.dragonfly.manifest.spec.topologySpreadConstraints[0].whenUnsatisfiable == "DoNotSchedule"
+    error_message = "the hostname constraint should be hard by default above one replica"
+  }
+
+  # Without it, a cluster scaled to one node has one eligible domain, skew is 0
+  # by definition, and both replicas may land together.
+  assert {
+    condition     = kubernetes_manifest.dragonfly.manifest.spec.topologySpreadConstraints[0].minDomains == 2
+    error_message = "the hard hostname constraint should carry minDomains = replicas"
+  }
+
+  # The apiserver rejects minDomains alongside ScheduleAnyway, and the operator
+  # patches the StatefulSet as one object — so one stray key fails the lot.
+  assert {
+    condition     = !can(kubernetes_manifest.dragonfly.manifest.spec.topologySpreadConstraints[1].minDomains)
+    error_message = "the zone constraint must not carry minDomains"
+  }
+
+  assert {
+    condition     = kubernetes_manifest.dragonfly.manifest.spec.topologySpreadConstraints[1].whenUnsatisfiable == "ScheduleAnyway"
+    error_message = "zones stay a preference so a saturated AZ never blocks scheduling"
+  }
+
+  assert {
+    condition     = kubernetes_manifest.dragonfly.manifest.spec.topologySpreadConstraints[0].labelSelector.matchLabels.app == "broker"
+    error_message = "the selector should match the instance's own pods"
+  }
+}
+
+run "dragonfly_soft_spread_when_asked" {
+  command = apply
+
+  module {
+    source = "./modules/dragonfly"
+  }
+
+  variables {
+    namespace              = "addon-test"
+    replicas               = 2
+    pod_anti_affinity_type = "preferred"
+  }
+
+  assert {
+    condition     = kubernetes_manifest.dragonfly.manifest.spec.topologySpreadConstraints[0].whenUnsatisfiable == "ScheduleAnyway"
+    error_message = "preferred should soften the hostname constraint"
+  }
+
+  assert {
+    condition     = !can(kubernetes_manifest.dragonfly.manifest.spec.topologySpreadConstraints[0].minDomains)
+    error_message = "a soft constraint must not carry minDomains"
+  }
+}
+
+# The raw input stays an escape hatch and wins outright.
+run "dragonfly_raw_spread_overrides_the_derived_one" {
+  command = apply
+
+  module {
+    source = "./modules/dragonfly"
+  }
+
+  variables {
+    namespace = "addon-test"
+    replicas  = 2
+    topology_spread_constraints = [{
+      maxSkew           = 3
+      topologyKey       = "custom/key"
+      whenUnsatisfiable = "ScheduleAnyway"
+      labelSelector     = { matchLabels = { app = "dragonfly" } }
+    }]
+  }
+
+  assert {
+    condition     = length(kubernetes_manifest.dragonfly.manifest.spec.topologySpreadConstraints) == 1
+    error_message = "an explicit list should replace the derived constraints entirely"
+  }
+
+  assert {
+    condition     = kubernetes_manifest.dragonfly.manifest.spec.topologySpreadConstraints[0].topologyKey == "custom/key"
+    error_message = "the explicit constraint should be the one rendered"
+  }
+}
+
+run "dragonfly_rejects_bad_anti_affinity_type" {
+  command = plan
+
+  module {
+    source = "./modules/dragonfly"
+  }
+
+  variables {
+    namespace              = "addon-test"
+    pod_anti_affinity_type = "hard"
+  }
+
+  expect_failures = [var.pod_anti_affinity_type]
+}
+
+# --- the IRSA credential-refresh trap ---------------------------------------
+# A warning, not a validation — but `terraform test` fails a run on a failed
+# check, which is what makes it assertable here.
+run "dragonfly_warns_when_s3_snapshots_run_an_unpinned_image" {
+  command = apply
+
+  module {
+    source = "./modules/dragonfly"
+  }
+
+  variables {
+    namespace            = "addon-test"
+    service_account_name = "dragonfly"
+    snapshot             = { s3_uri = "s3://backups/cache" }
+  }
+
+  expect_failures = [check.snapshot_credentials_refresh]
+}
+
+run "dragonfly_quiet_when_the_image_is_pinned" {
+  command = apply
+
+  module {
+    source = "./modules/dragonfly"
+  }
+
+  variables {
+    namespace            = "addon-test"
+    service_account_name = "dragonfly"
+    snapshot             = { s3_uri = "s3://backups/cache" }
+    image                = "docker.dragonflydb.io/dragonflydb/dragonfly:v1.38.1"
+  }
+
+  assert {
+    condition     = kubernetes_manifest.dragonfly.manifest.spec.image == "docker.dragonflydb.io/dragonflydb/dragonfly:v1.38.1"
+    error_message = "the pinned image should reach the spec"
+  }
+}
+
+# A PVC snapshot needs no AWS credentials at all, so the check must stay out of
+# its way.
+run "dragonfly_quiet_for_pvc_snapshots" {
+  command = apply
+
+  module {
+    source = "./modules/dragonfly"
+  }
+
+  variables {
+    namespace = "addon-test"
+    snapshot  = { pvc_size = "5Gi" }
+  }
+
+  assert {
+    condition     = can(kubernetes_manifest.dragonfly.manifest.spec.snapshot.persistentVolumeClaimSpec)
+    error_message = "a pvc_size snapshot should render a PVC spec"
+  }
 }
