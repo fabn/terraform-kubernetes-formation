@@ -186,8 +186,12 @@ resource "kubernetes_manifest" "cluster" {
     }
   }
 
+  # `update` as well as `create`: the wait above applies to both, so stating only
+  # one leaves an update waiting on the provider's own default — a number nobody
+  # here chose, and a different one.
   timeouts {
     create = var.ready_timeout
+    update = var.ready_timeout
   }
 
   depends_on = [kubernetes_secret_v1.app_cred]

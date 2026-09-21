@@ -243,8 +243,12 @@ resource "kubernetes_manifest" "dragonfly" {
     }
   }
 
+  # `update` as well as `create`: the wait above applies to both, so stating only
+  # one leaves an update waiting for the operator's phase on the provider's own
+  # default — a number nobody here chose, and a different one.
   timeouts {
     create = var.ready_timeout
+    update = var.ready_timeout
   }
 
   depends_on = [kubernetes_secret_v1.auth, kubernetes_service_account_v1.instance]

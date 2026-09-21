@@ -78,7 +78,7 @@ See also [`examples/dragonfly`](../../examples/dragonfly).
 | `service_account_name` | `null` | ServiceAccount for the instance pods (created here); needed for keyless S3 snapshots |
 | `service_account_annotations` | `{}` | e.g. the IRSA `eks.amazonaws.com/role-arn` |
 | `labels`, `annotations` | `{}`, `{}` | Metadata propagated to the operator's objects |
-| `wait_for_ready`, `ready_timeout` | `false`, `6m` | Block the apply until the operator reports the instance Ready |
+| `wait_for_ready`, `ready_timeout` | `false`, `10m` | Block the apply until the operator reports the instance Ready |
 
 ### HA & placement
 

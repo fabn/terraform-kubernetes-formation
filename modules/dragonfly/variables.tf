@@ -263,7 +263,7 @@ variable "wait_for_ready" {
 }
 
 variable "ready_timeout" {
-  description = "How long to wait for the Ready phase when wait_for_ready is set."
+  description = "How long to wait for the Ready phase when wait_for_ready is set, on create and on update alike."
   type        = string
-  default     = "6m"
+  default     = "10m"
 }
