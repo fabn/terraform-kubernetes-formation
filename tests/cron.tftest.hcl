@@ -25,6 +25,13 @@ override_data {
           spec = {
             serviceAccountName = "myapp"
             imagePullSecrets   = [{ name = "myapp-registry-pull-abc123" }]
+            nodeSelector       = { "node-pool" = "workers" }
+            # The second one carries `tolerationSeconds`, an integer here and a
+            # string in the provider.
+            tolerations = [
+              { key = "dedicated", operator = "Equal", value = "workers", effect = "NoSchedule" },
+              { key = "spot", operator = "Exists", effect = "NoExecute", tolerationSeconds = 120 },
+            ]
             # The pod template comes back from the API defaulted, hence the
             # `mountPropagation` the module is expected to normalise away, and
             # the decimal `defaultMode` (420 == 0644) it must render back as the
@@ -91,6 +98,69 @@ run "inherits_runtime_environment" {
   assert {
     condition     = kubernetes_cron_job_v1.cron.spec[0].job_template[0].spec[0].template[0].spec[0].container[0].image == "ghcr.io/acme/myapp:1.0.0"
     error_message = "CronJob should pin the explicit image"
+  }
+}
+
+# Test: placement is inherited alongside the storage it constrains — a tick
+# mounting the process's ReadWriteOnce claim has to land where that volume can
+# attach.
+run "inherits_placement" {
+  command = plan
+
+  module {
+    source = "./modules/cron"
+  }
+
+  assert {
+    condition     = kubernetes_cron_job_v1.cron.spec[0].job_template[0].spec[0].template[0].spec[0].node_selector["node-pool"] == "workers"
+    error_message = "CronJob should inherit the Deployment's nodeSelector"
+  }
+
+  assert {
+    condition = alltrue([
+      kubernetes_cron_job_v1.cron.spec[0].job_template[0].spec[0].template[0].spec[0].toleration[0].key == "dedicated",
+      kubernetes_cron_job_v1.cron.spec[0].job_template[0].spec[0].template[0].spec[0].toleration[0].operator == "Equal",
+      kubernetes_cron_job_v1.cron.spec[0].job_template[0].spec[0].template[0].spec[0].toleration[0].value == "workers",
+      kubernetes_cron_job_v1.cron.spec[0].job_template[0].spec[0].template[0].spec[0].toleration[0].effect == "NoSchedule",
+    ])
+    error_message = "CronJob should inherit the Deployment's tolerations field by field"
+  }
+
+  assert {
+    condition     = kubernetes_cron_job_v1.cron.spec[0].job_template[0].spec[0].template[0].spec[0].toleration[1].toleration_seconds == "120"
+    error_message = "tolerationSeconds should reach the provider as a string"
+  }
+}
+
+# Test: a Deployment that pins nothing renders no placement, rather than an
+# empty selector the scheduler would still have to read.
+run "renders_no_placement_when_the_deployment_has_none" {
+  command = plan
+
+  module {
+    source = "./modules/cron"
+  }
+
+  override_data {
+    target = data.kubernetes_resource.deployment
+    values = {
+      object = {
+        spec = { template = { spec = {
+          serviceAccountName = "myapp"
+          containers         = [{ name = "myapp" }]
+        } } }
+      }
+    }
+  }
+
+  assert {
+    condition     = kubernetes_cron_job_v1.cron.spec[0].job_template[0].spec[0].template[0].spec[0].node_selector == null
+    error_message = "No nodeSelector on the Deployment should render none on the CronJob"
+  }
+
+  assert {
+    condition     = length(kubernetes_cron_job_v1.cron.spec[0].job_template[0].spec[0].template[0].spec[0].toleration) == 0
+    error_message = "No tolerations on the Deployment should render none on the CronJob"
   }
 }
 
@@ -688,6 +758,8 @@ run "api_shaped_pod_template_with_null_collections" {
               serviceAccountName = null
               imagePullSecrets   = null
               volumes            = null
+              nodeSelector       = null
+              tolerations        = null
               containers = [{
                 name         = "myapp"
                 envFrom      = null
@@ -708,6 +780,14 @@ run "api_shaped_pod_template_with_null_collections" {
   assert {
     condition     = length(kubernetes_cron_job_v1.cron.spec[0].job_template[0].spec[0].template[0].spec[0].container[0].env_from) == 0
     error_message = "A null envFrom should read as no envFrom sources"
+  }
+
+  assert {
+    condition = alltrue([
+      kubernetes_cron_job_v1.cron.spec[0].job_template[0].spec[0].template[0].spec[0].node_selector == null,
+      length(kubernetes_cron_job_v1.cron.spec[0].job_template[0].spec[0].template[0].spec[0].toleration) == 0,
+    ])
+    error_message = "A null nodeSelector or tolerations should read as no placement, not fail the plan"
   }
 
   assert {

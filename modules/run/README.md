@@ -5,8 +5,9 @@ one-shot command (DB migrations, seed loading, arbitrary tasks) in the same
 environment as a deployed process. Instead of re-declaring that environment, the Job
 reads the live Deployment's pod template and inherits its `envFrom` (which is how it
 picks up the content-hash-suffixed Secret/ConfigMap names — addon connection vars
-included), `imagePullSecrets`, `serviceAccountName` and the **volumes its container
-mounts**.
+included), `imagePullSecrets`, `serviceAccountName`, the **volumes its container
+mounts** and the **placement that lets it mount them** (`nodeSelector`,
+`tolerations`).
 
 Two things stay deliberately explicit:
 
@@ -191,7 +192,19 @@ never collide and a retry is a new Job — never a silent in-place restart.
 
 ## HA & placement
 
-Not applicable: a Job is a one-shot, single-pod run. Storage is inherited from the
-Deployment's pod template together with the rest of its environment (see
-[Volumes](#volumes)); placement knobs — node affinity, tolerations, node selector
-— are not, so a run lands wherever the scheduler puts it.
+No replicas to spread: a Job is a one-shot, single-pod run.
+
+Placement is inherited, not configured. A run gets the Deployment's
+`nodeSelector` and `tolerations` along with its storage (see
+[Volumes](#volumes)), because the two are coupled: a ReadWriteOnce claim
+attaches in one zone, and a run scheduled outside it stays `Pending`.
+
+Node affinity is not inherited: the pod spec keeps it in the same `affinity`
+object as pod affinity and anti-affinity, and those must not be copied — a hard
+anti-affinity written against the process's own replicas would push the run off
+every node already running one, which on a small pool means it never schedules
+at all.
+
+Only what the pod template declares is copied. The `not-ready` and
+`unreachable` tolerations every pod ends up with are added by admission at Pod
+creation, never to a template, so they are not inherited and not rendered.

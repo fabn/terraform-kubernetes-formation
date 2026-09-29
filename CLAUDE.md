@@ -23,8 +23,9 @@ services are new addon modules, never new toggles in the core.
 
 One-off tasks (`heroku run` / release-phase equivalent) are the `run`
 submodule and scheduled ones the `cron` submodule: a Job / CronJob that inherits
-envFrom, pull secrets, service account and the mounted volumes from a live
-Deployment while the image and command stay explicit inputs. Volumes are
+envFrom, pull secrets, service account, the mounted volumes and the placement
+that lets them mount from a live Deployment, while the image and command stay
+explicit inputs. Volumes are
 inherited by default — the failure mode of not inheriting them is silent (an
 empty directory at a path the image creates anyway, writes discarded with the
 pod), while inheriting one that cannot be mounted only leaves the pod Pending.

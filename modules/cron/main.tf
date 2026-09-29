@@ -48,6 +48,7 @@ locals {
   pod_env_from     = flatten([for value in [try(local.container.envFrom, null)] : value if value != null])
   pod_mounts       = flatten([for value in [try(local.container.volumeMounts, null)] : value if value != null])
   pod_pull_secrets = flatten([for value in [try(local.pod_spec.imagePullSecrets, null)] : value if value != null])
+  pod_tolerations  = flatten([for value in [try(local.pod_spec.tolerations, null)] : value if value != null])
   pod_volumes      = flatten([for value in [try(local.pod_spec.volumes, null)] : value if value != null])
 
   # Flatten the first container's envFrom to plain ref names; either ref kind
@@ -60,6 +61,22 @@ locals {
 
   image_pull_secrets   = [for secret in local.pod_pull_secrets : secret.name]
   service_account_name = try(local.pod_spec.serviceAccountName, null)
+
+  # Placement is inherited on the same terms as the volumes below, and for the
+  # same reason: a tick that mounts the process's ReadWriteOnce claim can only
+  # run where that volume attaches. Only what the template declares is copied —
+  # the `not-ready` / `unreachable` tolerations are added by admission to Pods,
+  # never to a pod template.
+  node_selector = try(local.pod_spec.nodeSelector, null)
+
+  # `toleration_seconds` is an integer in the API and a string in the provider.
+  tolerations = [for toleration in local.pod_tolerations : {
+    key                = try(toleration.key, null)
+    operator           = try(toleration.operator, null)
+    value              = try(toleration.value, null)
+    effect             = try(toleration.effect, null)
+    toleration_seconds = try(tostring(toleration.tolerationSeconds), null)
+  }]
 
   # Volumes are inherited too, and by default. A tick that reads or writes a
   # directory the process mounts would otherwise see the image's own empty
@@ -234,6 +251,18 @@ resource "kubernetes_cron_job_v1" "cron" {
           spec {
             restart_policy       = "Never"
             service_account_name = local.service_account_name
+            node_selector        = local.node_selector
+
+            dynamic "toleration" {
+              for_each = local.tolerations
+              content {
+                key                = toleration.value.key
+                operator           = toleration.value.operator
+                value              = toleration.value.value
+                effect             = toleration.value.effect
+                toleration_seconds = toleration.value.toleration_seconds
+              }
+            }
 
             dynamic "image_pull_secrets" {
               for_each = local.image_pull_secrets
