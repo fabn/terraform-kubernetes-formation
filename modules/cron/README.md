@@ -6,7 +6,8 @@ schedule in the same environment as a deployed process. Instead of re-declaring
 that environment, it reads the live Deployment's pod template and inherits its
 `envFrom` (which is how it picks up the content-hash-suffixed Secret/ConfigMap
 names — addon connection vars included), `imagePullSecrets`,
-`serviceAccountName` and the **volumes its container mounts**.
+`serviceAccountName`, the **volumes its container mounts** and the
+**placement that lets it mount them** (`nodeSelector`, `tolerations`).
 
 ## Why not a formation process
 
@@ -221,4 +222,22 @@ Outputs: `cron_job_name`, `schedule`.
 
 ## HA & placement
 
-Not applicable: each tick is a one-shot, single-pod Job.
+No replicas to spread: each tick is a one-shot, single-pod Job.
+
+Placement is inherited, not configured. A tick gets the Deployment's
+`nodeSelector` and `tolerations`, because the volumes it also inherits
+constrain where it can run at all: a ReadWriteOnce claim attaches in one zone,
+and a tick scheduled outside it stays `Pending` until the deadline kills it.
+Inheriting the pod template's placement is also what keeps ticks on the pool
+the process was pinned to, rather than on whatever capacity is cheapest to
+scale up.
+
+Node affinity is not inherited: the pod spec keeps it in the same `affinity`
+object as pod affinity and anti-affinity, and those must not be copied — a hard
+anti-affinity written against the process's own replicas would push the tick off
+every node already running one, which on a small pool means it never schedules
+at all.
+
+Only what the pod template declares is copied. The `not-ready` and
+`unreachable` tolerations every pod ends up with are added by admission at Pod
+creation, never to a template, so they are not inherited and not rendered.

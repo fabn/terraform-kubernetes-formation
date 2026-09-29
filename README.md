@@ -376,7 +376,8 @@ module source.
 [`modules/run`](modules/run) is the `heroku run` / release-phase equivalent: a Job
 that inherits the runtime environment of a deployed process (its `envFrom` —
 content-hash-suffixed Secret/ConfigMap and addon vars included — plus pull secrets,
-service account and the volumes its container mounts) and runs a one-shot command.
+service account, the volumes its container mounts and the placement that lets it
+mount them) and runs a one-shot command.
 `image` and `command` stay explicit, so a release pins the artifact it is
 releasing:
 
@@ -401,6 +402,8 @@ release pipelines. Volumes are inherited by default in both submodules
 (`inherit_volumes = false` opts out, `volumes` adds to or overrides what was
 inherited): a run or a tick without the process's storage reads an empty
 directory and writes into a layer that is discarded, and neither raises anything.
+`nodeSelector` and `tolerations` come with them, since a ReadWriteOnce claim only
+attaches where its zone allows.
 Inputs, defaults and caveats: [`modules/run`](modules/run) and
 [`modules/cron`](modules/cron).
 
