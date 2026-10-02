@@ -185,6 +185,22 @@ run "postgres_cnpg_datadog" {
   }
 }
 
+# Step 5b: the role actually works. Log in as it, with the password the check
+# annotation carries, and use the grant the check depends on.
+run "postgres_cnpg_datadog_role" {
+  module {
+    source = "./modules/postgres-monitor-ping"
+  }
+
+  variables {
+    namespace       = run.namespace.name
+    host            = run.postgres_cnpg_datadog.host
+    username        = "datadog"
+    database        = "myapp"
+    password_secret = "e2e-cnpg-datadog"
+  }
+}
+
 # Step 6: the same idempotency guard as step 4, with the role and the
 # annotation in the spec. A default the operator fills in on the role would
 # show up here as a perpetual diff.
