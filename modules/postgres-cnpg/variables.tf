@@ -204,6 +204,30 @@ variable "priority_class_name" {
   default     = null
 }
 
+variable "datadog" {
+  description = <<-EOT
+    Datadog Postgres integration on every instance, primary and replicas. When
+    set, the module creates a login role in pg_monitor, managed by the operator,
+    and annotates the instance pods with the check that connects as it.
+    `instance` is merged last into the check instance, for any option of the
+    integration not modelled here. `dbm = true` also turns on Database
+    Monitoring and sets the server parameters it needs, which restarts every
+    instance.
+  EOT
+  type = object({
+    username = optional(string, "datadog")
+    tags     = optional(list(string), [])
+    dbm      = optional(bool, false)
+    instance = optional(any, {})
+  })
+  default = null
+
+  validation {
+    condition     = var.datadog == null || (try(var.datadog.username, "") != var.username && !startswith(try(var.datadog.username, ""), "pg_") && try(var.datadog.username, "") != "postgres")
+    error_message = "datadog.username must differ from username and must not be postgres or start with pg_."
+  }
+}
+
 # --- backup (barman-cloud plugin, S3-compatible object store) ----------------
 # Requires the barman-cloud plugin installed cluster-wide (see the
 # cloudnative-pg operator module). Leave null to skip backups entirely.

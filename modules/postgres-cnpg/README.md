@@ -63,6 +63,7 @@ See also [`examples/postgres-cnpg`](../../examples/postgres-cnpg).
 | `memory_requests`, `memory_limits` | `256Mi`, `512Mi` | Memory |
 | `wait_for_ready`, `ready_timeout` | `false`, `10m` | Block the apply until the operator reports Ready |
 | `backup` | `null` | Continuous backup + PITR to S3 via barman-cloud (see below) |
+| `datadog` | `null` | Datadog Postgres integration on every instance (see below) |
 
 ### HA & placement
 
@@ -155,6 +156,59 @@ backup = {
 
 Leaving `credentials_secret_name` null makes the backup keyless: the pods write
 with their ambient IAM identity (EKS Pod Identity / IRSA).
+
+### Datadog
+
+`datadog` wires the [Datadog Postgres integration](https://docs.datadoghq.com/integrations/postgres/)
+into every instance, through Autodiscovery annotations and no agent-side config:
+
+```hcl
+datadog = {
+  tags = ["env:production", "service:myapp-postgres"]
+  # username = "datadog"                           # the monitoring role
+  # dbm      = true                                # Database Monitoring, see below
+  # instance = { collect_activity_metrics = true } # any other check option
+}
+```
+
+It adds three things:
+
+- a `<name>-datadog` basic-auth Secret with a generated password;
+- a login role in `pg_monitor`, declared in `spec.managed.roles`, so the
+  operator creates it on an existing cluster too, not only at bootstrap;
+- an `ad.datadoghq.com/postgres.checks` annotation, propagated through
+  `spec.inheritedMetadata` onto every instance pod, connecting to `%%host%%`
+  (the pod itself) on the application database.
+
+Each instance is checked on its own, replicas included, so per-instance
+connections, cache hit ratio, transaction rate, temp files, database size and
+replication delay land next to the pod's CPU and memory, which the agent already
+collects from the kubelet.
+
+`pg_monitor` reads statistics and settings, not table data. It does see the text
+of the queries every session is running, literals included.
+
+The password is in plain text in the pod annotation, which is how the agent
+reads it: anyone who can read the pods in the namespace can read it. Use
+`instance = { password = "ENC[...]" }` to point the check at a [secrets
+backend](https://docs.datadoghq.com/agent/configuration/secrets-management/)
+handle instead; the role keeps the password in the Secret, so the handle must
+resolve to the same value.
+
+#### Database Monitoring
+
+`dbm = true` turns on [Database Monitoring](https://docs.datadoghq.com/database_monitoring/setup_postgres/selfhosted/)
+in the check and sets the server parameters it needs (`pg_stat_statements.*`,
+`track_activity_query_size`, `track_io_timing`). The operator preloads
+`pg_stat_statements` and creates the extension on its own. Two caveats:
+
+- `track_activity_query_size` and the preload need a restart, so turning it on
+  rolls every instance, with a switchover.
+- Explain plans need the `datadog.explain_statement` function from the setup
+  guide in the application database. The module does not create it: query
+  metrics and samples work without it, plans do not.
+
+Database Monitoring is billed separately from infrastructure monitoring.
 
 Reference: [CloudNativePG](https://github.com/cloudnative-pg/cloudnative-pg)
 ([Cluster CRD](https://cloudnative-pg.io/docs/1.30/cloudnative-pg.v1)),

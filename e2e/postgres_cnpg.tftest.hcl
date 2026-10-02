@@ -144,3 +144,80 @@ run "postgres_cnpg_idempotent" {
     error_message = "postgres-cnpg is not idempotent: a re-plan still changes spec.inheritedMetadata.annotations (perpetual diff, #32)"
   }
 }
+
+# Step 5: turn the Datadog integration on for the Cluster that already exists,
+# which is how it gets enabled in practice. The managed role and the inherited
+# check annotation are sent as-is, so the CRD only accepts or rejects them here.
+run "postgres_cnpg_datadog" {
+  module {
+    source = "../modules/postgres-cnpg"
+  }
+
+  variables {
+    namespace      = run.namespace.name
+    name           = "e2e-cnpg"
+    database       = "myapp"
+    username       = "myapp"
+    storage_size   = "1Gi"
+    part_of        = "e2e"
+    wait_for_ready = true
+    datadog        = { tags = ["env:e2e"] }
+
+    node_affinity = {
+      required  = [{ key = "kubernetes.io/os", operator = "In", values = ["linux"] }]
+      preferred = [{ weight = 100, key = "kubernetes.io/arch", operator = "In", values = ["amd64", "arm64"] }]
+    }
+    topology_spread_constraints = [{
+      maxSkew           = 1
+      topologyKey       = "kubernetes.io/hostname"
+      whenUnsatisfiable = "ScheduleAnyway"
+    }]
+  }
+
+  assert {
+    condition     = kubernetes_manifest.cluster.object.spec.managed.roles[0].name == "datadog" && contains(kubernetes_manifest.cluster.object.spec.managed.roles[0].inRoles, "pg_monitor")
+    error_message = "the stored Cluster should carry the pg_monitor managed role"
+  }
+
+  assert {
+    condition     = can(jsondecode(kubernetes_manifest.cluster.object.spec.inheritedMetadata.annotations["ad.datadoghq.com/postgres.checks"]))
+    error_message = "the stored Cluster should carry the check annotation"
+  }
+}
+
+# Step 6: the same idempotency guard as step 4, with the role and the
+# annotation in the spec. A default the operator fills in on the role would
+# show up here as a perpetual diff.
+run "postgres_cnpg_datadog_idempotent" {
+  command = plan
+
+  module {
+    source = "../modules/postgres-cnpg"
+  }
+
+  variables {
+    namespace      = run.namespace.name
+    name           = "e2e-cnpg"
+    database       = "myapp"
+    username       = "myapp"
+    storage_size   = "1Gi"
+    part_of        = "e2e"
+    wait_for_ready = true
+    datadog        = { tags = ["env:e2e"] }
+
+    node_affinity = {
+      required  = [{ key = "kubernetes.io/os", operator = "In", values = ["linux"] }]
+      preferred = [{ weight = 100, key = "kubernetes.io/arch", operator = "In", values = ["amd64", "arm64"] }]
+    }
+    topology_spread_constraints = [{
+      maxSkew           = 1
+      topologyKey       = "kubernetes.io/hostname"
+      whenUnsatisfiable = "ScheduleAnyway"
+    }]
+  }
+
+  assert {
+    condition     = kubernetes_manifest.cluster.object.spec.managed.roles[0].passwordSecret.name == "e2e-cnpg-datadog"
+    error_message = "postgres-cnpg with datadog is not idempotent: a re-plan still changes the Cluster"
+  }
+}
