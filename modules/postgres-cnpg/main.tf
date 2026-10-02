@@ -24,6 +24,43 @@ locals {
     var.labels,
   )
 
+  datadog_secret = "${var.name}-datadog"
+
+  # Autodiscovery reads the check from the pod annotation keyed by container
+  # name, and every instance pod's container is called `postgres`.
+  datadog_annotations = var.datadog == null ? {} : {
+    "ad.datadoghq.com/postgres.checks" = jsonencode({
+      postgres = {
+        init_config = {}
+        instances = [merge(
+          {
+            host     = "%%host%%"
+            port     = 5432
+            username = var.datadog.username
+            password = random_password.datadog[0].result
+            dbname   = var.database
+            dbm      = var.datadog.dbm
+            tags     = var.datadog.tags
+          },
+          var.datadog.instance,
+        )]
+      }
+    })
+  }
+
+  annotations = merge(var.annotations, local.datadog_annotations)
+
+  # What Database Monitoring needs from the server. Setting any
+  # pg_stat_statements.* parameter is what makes the operator preload the
+  # library and create the extension.
+  dbm_parameters = {
+    "pg_stat_statements.max"           = "10000"
+    "pg_stat_statements.track"         = "all"
+    "pg_stat_statements.track_utility" = "off"
+    "track_activity_query_size"        = "4096"
+    "track_io_timing"                  = "on"
+  }
+
   barman_object_name = "${var.name}-backup"
   plugin_name        = "barman-cloud.cloudnative-pg.io"
 
@@ -95,6 +132,32 @@ resource "kubernetes_secret_v1" "app_cred" {
   }
 }
 
+resource "random_password" "datadog" {
+  count = var.datadog != null ? 1 : 0
+
+  length  = 32
+  special = false
+}
+
+# basic-auth Secret for the managed monitoring role. The operator requires the
+# username to match the role name; cnpg.io/reload makes it pick up a rotation.
+resource "kubernetes_secret_v1" "datadog_cred" {
+  count = var.datadog != null ? 1 : 0
+
+  metadata {
+    name      = local.datadog_secret
+    namespace = var.namespace
+    labels    = merge(local.labels, { "cnpg.io/reload" = "true" })
+  }
+
+  type = "kubernetes.io/basic-auth"
+
+  data = {
+    username = var.datadog.username
+    password = random_password.datadog[0].result
+  }
+}
+
 resource "kubernetes_manifest" "cluster" {
   manifest = {
     apiVersion = "postgresql.cnpg.io/v1"
@@ -159,12 +222,24 @@ resource "kubernetes_manifest" "cluster" {
       # sending null is what the operator normalises away server-side, leaving a
       # perpetual `annotations = (known after apply)` diff that re-applies the
       # Cluster every plan (#32).
-      length(local.inherited_labels) > 0 || length(var.annotations) > 0 ? {
+      length(local.inherited_labels) > 0 || length(local.annotations) > 0 ? {
         inheritedMetadata = {
           labels      = local.inherited_labels
-          annotations = var.annotations
+          annotations = local.annotations
         }
       } : {},
+      var.datadog != null ? {
+        managed = {
+          roles = [{
+            name           = var.datadog.username
+            ensure         = "present"
+            login          = true
+            inRoles        = ["pg_monitor"]
+            passwordSecret = { name = local.datadog_secret }
+          }]
+        }
+      } : {},
+      try(var.datadog.dbm, false) ? { postgresql = { parameters = local.dbm_parameters } } : {},
       var.backup != null ? {
         plugins = [{
           name          = local.plugin_name
@@ -194,7 +269,7 @@ resource "kubernetes_manifest" "cluster" {
     update = var.ready_timeout
   }
 
-  depends_on = [kubernetes_secret_v1.app_cred]
+  depends_on = [kubernetes_secret_v1.app_cred, kubernetes_secret_v1.datadog_cred]
 }
 
 # --- backup ------------------------------------------------------------------

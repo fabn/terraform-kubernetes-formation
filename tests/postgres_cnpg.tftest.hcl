@@ -460,3 +460,163 @@ run "cnpg_renders_topology_spread_constraints" {
     error_message = "topologySpreadConstraints belongs to the Cluster spec, not to the affinity block"
   }
 }
+
+# --- Datadog -----------------------------------------------------------------
+
+# Nothing Datadog-related is rendered unless datadog is set.
+run "cnpg_no_datadog_by_default" {
+  command = apply
+
+  module {
+    source = "./modules/postgres-cnpg"
+  }
+
+  variables {
+    namespace = "addon-test"
+    database  = "myapp"
+    username  = "myapp"
+  }
+
+  assert {
+    condition     = !can(kubernetes_manifest.cluster.manifest.spec.managed) && !can(kubernetes_manifest.cluster.manifest.spec.postgresql) && !can(kubernetes_manifest.cluster.manifest.spec.inheritedMetadata)
+    error_message = "managed roles, server parameters and inherited metadata should be absent without datadog"
+  }
+
+  assert {
+    condition     = length(kubernetes_secret_v1.datadog_cred) == 0 && length(random_password.datadog) == 0
+    error_message = "no monitoring credentials should be created without datadog"
+  }
+}
+
+run "cnpg_datadog_check" {
+  command = apply
+
+  module {
+    source = "./modules/postgres-cnpg"
+  }
+
+  variables {
+    namespace   = "addon-test"
+    name        = "db"
+    database    = "myapp"
+    username    = "myapp"
+    annotations = { "example.com/owner" = "team-a" }
+    datadog     = { tags = ["env:test"] }
+  }
+
+  assert {
+    condition = kubernetes_manifest.cluster.manifest.spec.managed.roles[0] == {
+      name           = "datadog"
+      ensure         = "present"
+      login          = true
+      inRoles        = ["pg_monitor"]
+      passwordSecret = { name = "db-datadog" }
+    }
+    error_message = "the monitoring role should be a pg_monitor login role reading its password from db-datadog"
+  }
+
+  assert {
+    condition     = kubernetes_secret_v1.datadog_cred[0].type == "kubernetes.io/basic-auth" && kubernetes_secret_v1.datadog_cred[0].data.username == "datadog" && kubernetes_secret_v1.datadog_cred[0].data.password == random_password.datadog[0].result
+    error_message = "the role Secret should be basic-auth with the role name as username"
+  }
+
+  assert {
+    condition     = kubernetes_secret_v1.datadog_cred[0].metadata[0].labels["cnpg.io/reload"] == "true"
+    error_message = "the role Secret should be watched by the operator"
+  }
+
+  assert {
+    condition = jsondecode(kubernetes_manifest.cluster.manifest.spec.inheritedMetadata.annotations["ad.datadoghq.com/postgres.checks"]).postgres.instances[0] == {
+      host     = "%%host%%"
+      port     = 5432
+      username = "datadog"
+      password = random_password.datadog[0].result
+      dbname   = "myapp"
+      dbm      = false
+      tags     = ["env:test"]
+    }
+    error_message = "the check should connect to the pod as the monitoring role, on the application database"
+  }
+
+  assert {
+    condition     = kubernetes_manifest.cluster.manifest.spec.inheritedMetadata.annotations["example.com/owner"] == "team-a"
+    error_message = "caller annotations should be kept alongside the check"
+  }
+
+  assert {
+    condition     = !can(kubernetes_manifest.cluster.manifest.spec.postgresql)
+    error_message = "server parameters should not change without dbm"
+  }
+}
+
+run "cnpg_datadog_dbm" {
+  command = apply
+
+  module {
+    source = "./modules/postgres-cnpg"
+  }
+
+  variables {
+    namespace = "addon-test"
+    database  = "myapp"
+    username  = "myapp"
+    datadog = {
+      username = "monitor"
+      dbm      = true
+      instance = { collect_activity_metrics = true, dbname = "postgres" }
+    }
+  }
+
+  assert {
+    condition     = kubernetes_manifest.cluster.manifest.spec.postgresql.parameters["pg_stat_statements.track"] == "all" && kubernetes_manifest.cluster.manifest.spec.postgresql.parameters["track_activity_query_size"] == "4096"
+    error_message = "dbm should set the pg_stat_statements and query-size parameters"
+  }
+
+  assert {
+    condition     = kubernetes_manifest.cluster.manifest.spec.managed.roles[0].name == "monitor" && kubernetes_secret_v1.datadog_cred[0].data.username == "monitor"
+    error_message = "the role and its Secret should follow datadog.username"
+  }
+
+  assert {
+    condition = (
+      jsondecode(kubernetes_manifest.cluster.manifest.spec.inheritedMetadata.annotations["ad.datadoghq.com/postgres.checks"]).postgres.instances[0].dbm == true &&
+      jsondecode(kubernetes_manifest.cluster.manifest.spec.inheritedMetadata.annotations["ad.datadoghq.com/postgres.checks"]).postgres.instances[0].collect_activity_metrics == true &&
+      jsondecode(kubernetes_manifest.cluster.manifest.spec.inheritedMetadata.annotations["ad.datadoghq.com/postgres.checks"]).postgres.instances[0].dbname == "postgres"
+    )
+    error_message = "instance options should be merged into the check, over the module's own"
+  }
+}
+
+run "cnpg_datadog_rejects_reserved_username" {
+  command = plan
+
+  module {
+    source = "./modules/postgres-cnpg"
+  }
+
+  variables {
+    namespace = "addon-test"
+    database  = "myapp"
+    username  = "myapp"
+    datadog   = { username = "pg_monitor" }
+  }
+
+  expect_failures = [var.datadog]
+}
+
+run "cnpg_datadog_rejects_application_username" {
+  command = plan
+
+  module {
+    source = "./modules/postgres-cnpg"
+  }
+
+  variables {
+    namespace = "addon-test"
+    database  = "myapp"
+    username  = "myapp"
+    datadog   = { username = "myapp" }
+  }
+
+  expect_failures = [var.datadog]
+}

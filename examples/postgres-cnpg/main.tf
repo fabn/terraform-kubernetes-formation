@@ -50,6 +50,12 @@ module "postgres" {
     destination_path = "s3://my-backups-bucket/myapp/pg"
     retention_policy = "30d"
   }
+
+  # Optional Datadog Postgres check on every instance, connecting as a
+  # pg_monitor role the operator manages. Drop the block to skip it.
+  datadog = {
+    tags = ["env:example", "service:myapp-postgres"]
+  }
 }
 
 module "app" {
