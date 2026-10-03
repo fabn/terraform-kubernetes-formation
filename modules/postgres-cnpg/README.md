@@ -194,7 +194,19 @@ sequential and index scans, last vacuum and analyze. It is the
 check with `relation_regex: ".*"`, capped by the check's `max_relations` (300),
 and `pg_monitor` already has the access it needs. Only the annotation changes,
 so turning it on or off restarts nothing. `instance = { relations = [...] }`
-replaces the default list.
+replaces the default list, with the check's full syntax: names or regexes,
+schemas, relation kinds.
+
+```hcl
+datadog = {
+  instance = {
+    relations = [
+      { relation_regex = "^orders_.*", schemas = ["public"] }, # matching tables in one schema
+      { relation_name = "events", relkind = ["r", "p"] },      # a table and its partitions
+    ]
+  }
+}
+```
 
 `pg_monitor` reads statistics and settings, not table data. It does see the text
 of the queries every session is running, literals included.
