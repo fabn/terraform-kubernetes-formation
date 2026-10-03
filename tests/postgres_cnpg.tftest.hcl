@@ -620,3 +620,120 @@ run "cnpg_datadog_rejects_application_username" {
 
   expect_failures = [var.datadog]
 }
+
+# With password_from_secret the annotation carries an ENC[] handle instead of
+# the password, and only the named service accounts may read that one Secret.
+run "cnpg_datadog_password_from_secret" {
+  command = apply
+
+  module {
+    source = "./modules/postgres-cnpg"
+  }
+
+  variables {
+    namespace = "addon-test"
+    name      = "db"
+    database  = "myapp"
+    username  = "myapp"
+    datadog   = { password_from_secret = {} }
+  }
+
+  assert {
+    condition     = jsondecode(kubernetes_manifest.cluster.manifest.spec.inheritedMetadata.annotations["ad.datadoghq.com/postgres.checks"]).postgres.instances[0].password == "ENC[addon-test/db-datadog;password]"
+    error_message = "the check should reference the role Secret through the single k8s.secrets backend syntax"
+  }
+
+  assert {
+    condition     = !issensitive(kubernetes_manifest.cluster.manifest.spec.inheritedMetadata.annotations["ad.datadoghq.com/postgres.checks"])
+    error_message = "with a handle the annotation holds no secret, so it should not be marked sensitive"
+  }
+
+  assert {
+    condition     = kubernetes_secret_v1.datadog_cred[0].data.password == random_password.datadog[0].result
+    error_message = "the role Secret should still hold the password the operator sets on the role"
+  }
+
+  assert {
+    condition     = toset(kubernetes_role_v1.datadog_secret_reader[0].rule[0].resource_names) == toset(["db-datadog"]) && toset(kubernetes_role_v1.datadog_secret_reader[0].rule[0].verbs) == toset(["get"]) && toset(kubernetes_role_v1.datadog_secret_reader[0].rule[0].resources) == toset(["secrets"])
+    error_message = "the Role should grant get on the role Secret only"
+  }
+
+  assert {
+    condition = (
+      length(kubernetes_role_binding_v1.datadog_secret_reader[0].subject) == 1 &&
+      kubernetes_role_binding_v1.datadog_secret_reader[0].subject[0].name == "datadog-agent" &&
+      kubernetes_role_binding_v1.datadog_secret_reader[0].subject[0].namespace == "datadog"
+    )
+    error_message = "the binding should default to the Datadog Operator's node agent service account"
+  }
+}
+
+run "cnpg_datadog_password_from_named_backend" {
+  command = apply
+
+  module {
+    source = "./modules/postgres-cnpg"
+  }
+
+  variables {
+    namespace = "addon-test"
+    database  = "myapp"
+    username  = "myapp"
+    datadog = {
+      password_from_secret = {
+        backend = "k8s"
+        readers = [
+          { namespace = "monitoring", name = "agent" },
+          { namespace = "monitoring", name = "cluster-agent" },
+        ]
+      }
+    }
+  }
+
+  assert {
+    condition     = jsondecode(kubernetes_manifest.cluster.manifest.spec.inheritedMetadata.annotations["ad.datadoghq.com/postgres.checks"]).postgres.instances[0].password == "ENC[k8s;addon-test/pg-datadog;password]"
+    error_message = "a named backend should prefix the handle, as multi_secret_backends expects"
+  }
+
+  assert {
+    condition     = [for s in kubernetes_role_binding_v1.datadog_secret_reader[0].subject : "${s.namespace}/${s.name}"] == ["monitoring/agent", "monitoring/cluster-agent"]
+    error_message = "every reader should be bound"
+  }
+}
+
+run "cnpg_datadog_plaintext_has_no_reader_role" {
+  command = apply
+
+  module {
+    source = "./modules/postgres-cnpg"
+  }
+
+  variables {
+    namespace = "addon-test"
+    database  = "myapp"
+    username  = "myapp"
+    datadog   = {}
+  }
+
+  assert {
+    condition     = length(kubernetes_role_v1.datadog_secret_reader) == 0 && length(kubernetes_role_binding_v1.datadog_secret_reader) == 0
+    error_message = "no RBAC should be created while the password stays in the annotation"
+  }
+}
+
+run "cnpg_datadog_rejects_no_readers" {
+  command = plan
+
+  module {
+    source = "./modules/postgres-cnpg"
+  }
+
+  variables {
+    namespace = "addon-test"
+    database  = "myapp"
+    username  = "myapp"
+    datadog   = { password_from_secret = { readers = [] } }
+  }
+
+  expect_failures = [var.datadog]
+}

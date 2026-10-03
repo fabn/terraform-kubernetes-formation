@@ -213,18 +213,36 @@ variable "datadog" {
     integration not modelled here. `dbm = true` also turns on Database
     Monitoring and sets the server parameters it needs, which restarts every
     instance.
+
+    `password_from_secret` replaces the plaintext password in the pod
+    annotation with an ENC[] handle the agent resolves from the role's Secret,
+    through its `k8s.secrets` secret backend, and grants `readers` get on that
+    one Secret. `backend` is the backend's name when the agent runs several
+    (`multi_secret_backends`); leave it null when `k8s.secrets` is its only one.
   EOT
   type = object({
     username = optional(string, "datadog")
     tags     = optional(list(string), [])
     dbm      = optional(bool, false)
     instance = optional(any, {})
+    password_from_secret = optional(object({
+      backend = optional(string)
+      readers = optional(list(object({
+        namespace = string
+        name      = string
+      })), [{ namespace = "datadog", name = "datadog-agent" }])
+    }))
   })
   default = null
 
   validation {
     condition     = var.datadog == null || (try(var.datadog.username, "") != var.username && !startswith(try(var.datadog.username, ""), "pg_") && try(var.datadog.username, "") != "postgres")
     error_message = "datadog.username must differ from username and must not be postgres or start with pg_."
+  }
+
+  validation {
+    condition     = try(length(var.datadog.password_from_secret.readers), 1) > 0
+    error_message = "datadog.password_from_secret.readers must name at least one service account, or the agent cannot read the Secret."
   }
 }
 
