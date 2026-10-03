@@ -527,13 +527,14 @@ run "cnpg_datadog_check" {
 
   assert {
     condition = jsondecode(kubernetes_manifest.cluster.manifest.spec.inheritedMetadata.annotations["ad.datadoghq.com/postgres.checks"]).postgres.instances[0] == {
-      host     = "%%host%%"
-      port     = 5432
-      username = "datadog"
-      password = random_password.datadog[0].result
-      dbname   = "myapp"
-      dbm      = false
-      tags     = ["env:test"]
+      host      = "%%host%%"
+      port      = 5432
+      username  = "datadog"
+      password  = random_password.datadog[0].result
+      dbname    = "myapp"
+      dbm       = false
+      tags      = ["env:test"]
+      relations = [{ relation_regex = ".*" }]
     }
     error_message = "the check should connect to the pod as the monitoring role, on the application database"
   }
@@ -619,4 +620,44 @@ run "cnpg_datadog_rejects_application_username" {
   }
 
   expect_failures = [var.datadog]
+}
+
+run "cnpg_datadog_relations_opt_out" {
+  command = apply
+
+  module {
+    source = "./modules/postgres-cnpg"
+  }
+
+  variables {
+    namespace = "addon-test"
+    database  = "myapp"
+    username  = "myapp"
+    datadog   = { relations = false }
+  }
+
+  assert {
+    condition     = !can(jsondecode(kubernetes_manifest.cluster.manifest.spec.inheritedMetadata.annotations["ad.datadoghq.com/postgres.checks"]).postgres.instances[0].relations)
+    error_message = "relations = false should leave per-table collection off"
+  }
+}
+
+run "cnpg_datadog_relations_instance_override" {
+  command = apply
+
+  module {
+    source = "./modules/postgres-cnpg"
+  }
+
+  variables {
+    namespace = "addon-test"
+    database  = "myapp"
+    username  = "myapp"
+    datadog   = { instance = { relations = [{ relation_name = "orders" }] } }
+  }
+
+  assert {
+    condition     = jsondecode(kubernetes_manifest.cluster.manifest.spec.inheritedMetadata.annotations["ad.datadoghq.com/postgres.checks"]).postgres.instances[0].relations == [{ relation_name = "orders" }]
+    error_message = "instance should override the default relations list"
+  }
 }
