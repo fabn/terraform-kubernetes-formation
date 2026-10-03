@@ -161,7 +161,7 @@ run "postgres_cnpg_datadog" {
     storage_size   = "1Gi"
     part_of        = "e2e"
     wait_for_ready = true
-    datadog        = { tags = ["env:e2e"] }
+    datadog        = { tags = ["env:e2e"], password_from_secret = {} }
 
     node_affinity = {
       required  = [{ key = "kubernetes.io/os", operator = "In", values = ["linux"] }]
@@ -180,8 +180,13 @@ run "postgres_cnpg_datadog" {
   }
 
   assert {
-    condition     = can(jsondecode(kubernetes_manifest.cluster.object.spec.inheritedMetadata.annotations["ad.datadoghq.com/postgres.checks"]))
-    error_message = "the stored Cluster should carry the check annotation"
+    condition     = jsondecode(kubernetes_manifest.cluster.object.spec.inheritedMetadata.annotations["ad.datadoghq.com/postgres.checks"]).postgres.instances[0].password == "ENC[cnpg-e2e/e2e-cnpg-datadog;password]"
+    error_message = "the stored Cluster should carry the check annotation, with a Secret handle in place of the password"
+  }
+
+  assert {
+    condition     = kubernetes_role_binding_v1.datadog_secret_reader[0].role_ref[0].name == "e2e-cnpg-datadog-reader"
+    error_message = "the reader Role and RoleBinding should be accepted by the API server"
   }
 }
 
@@ -219,7 +224,7 @@ run "postgres_cnpg_datadog_idempotent" {
     storage_size   = "1Gi"
     part_of        = "e2e"
     wait_for_ready = true
-    datadog        = { tags = ["env:e2e"] }
+    datadog        = { tags = ["env:e2e"], password_from_secret = {} }
 
     node_affinity = {
       required  = [{ key = "kubernetes.io/os", operator = "In", values = ["linux"] }]

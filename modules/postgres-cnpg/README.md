@@ -169,6 +169,7 @@ datadog = {
   # dbm      = true                                # Database Monitoring, see below
   # relations = false                              # per-table metrics, on by default
   # instance = { collect_activity_metrics = true } # any other check option
+  # password_from_secret = {}                      # see below
 }
 ```
 
@@ -198,12 +199,36 @@ replaces the default list.
 `pg_monitor` reads statistics and settings, not table data. It does see the text
 of the queries every session is running, literals included.
 
-The password is in plain text in the pod annotation, which is how the agent
-reads it: anyone who can read the pods in the namespace can read it. Use
-`instance = { password = "ENC[...]" }` to point the check at a [secrets
-backend](https://docs.datadoghq.com/agent/configuration/secrets-management/)
-handle instead; the role keeps the password in the Secret, so the handle must
-resolve to the same value.
+By default the password is in plain text in the pod annotation, which is how
+the agent reads it: anyone who can read the pods in the namespace can read it.
+
+#### Password from the role's Secret
+
+`password_from_secret` puts an `ENC[]` handle in the annotation instead, which
+the agent resolves from the `<name>-datadog` Secret through its
+[`k8s.secrets` secret backend](https://docs.datadoghq.com/agent/configuration/secrets-management/)
+(Agent 7.75+). The module also creates a Role granting `get` on that one Secret,
+and binds it to the agent's service accounts:
+
+```hcl
+datadog = {
+  password_from_secret = {
+    # backend = "k8s"   # the backend's name under multi_secret_backends (Agent 7.80+);
+    #                   # omit when k8s.secrets is the agent's only backend
+    # readers = [{ namespace = "datadog", name = "datadog-agent" }]   # the default
+  }
+}
+```
+
+| agent configuration | handle written to the annotation |
+| --- | --- |
+| `secret_backend_type: k8s.secrets` | `ENC[<namespace>/<name>-datadog;password]` |
+| `multi_secret_backends` with a `k8s.secrets` entry named `k8s` | `ENC[k8s;<namespace>/<name>-datadog;password]` |
+
+The agent side is not the module's to configure: turn on the backend before
+turning this on, or the check fails to authenticate. `readers` defaults to the
+node agent's service account as the Datadog Operator names it; pod annotations
+are scheduled on the node agent, so that is the one that resolves the handle.
 
 #### Database Monitoring
 
