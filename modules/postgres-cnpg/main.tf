@@ -56,6 +56,7 @@ locals {
             dbm    = var.datadog.dbm
             tags   = var.datadog.tags
           },
+          var.datadog.relations ? { relations = [{ relation_regex = ".*" }] } : {},
           var.datadog.instance,
         )]
       }

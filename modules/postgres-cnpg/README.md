@@ -167,6 +167,7 @@ datadog = {
   tags = ["env:production", "service:myapp-postgres"]
   # username = "datadog"                           # the monitoring role
   # dbm      = true                                # Database Monitoring, see below
+  # relations = false                              # per-table metrics, on by default
   # instance = { collect_activity_metrics = true } # any other check option
   # password_from_secret = {}                      # see below
 }
@@ -185,6 +186,27 @@ Each instance is checked on its own, replicas included, so per-instance
 connections, cache hit ratio, transaction rate, temp files, database size and
 replication delay land next to the pod's CPU and memory, which the agent already
 collects from the kubelet.
+
+`relations` (on by default) also collects per-table metrics for every table of
+the application database: table, index and total size, live and dead tuples,
+sequential and index scans, last vacuum and analyze. It is the
+[`relations`](https://docs.datadoghq.com/integrations/postgres/) option of the
+check with `relation_regex: ".*"`, capped by the check's `max_relations` (300),
+and `pg_monitor` already has the access it needs. Only the annotation changes,
+so turning it on or off restarts nothing. `instance = { relations = [...] }`
+replaces the default list, with the check's full syntax: names or regexes,
+schemas, relation kinds.
+
+```hcl
+datadog = {
+  instance = {
+    relations = [
+      { relation_regex = "^orders_.*", schemas = ["public"] }, # matching tables in one schema
+      { relation_name = "events", relkind = ["r", "p"] },      # a table and its partitions
+    ]
+  }
+}
+```
 
 `pg_monitor` reads statistics and settings, not table data. It does see the text
 of the queries every session is running, literals included.

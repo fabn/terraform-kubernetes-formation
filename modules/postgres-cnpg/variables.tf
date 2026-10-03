@@ -214,6 +214,11 @@ variable "datadog" {
     Monitoring and sets the server parameters it needs, which restarts every
     instance.
 
+    `relations` (on by default) collects per-table metrics for every table of
+    the application database: table, index and total size, live and dead
+    tuples, sequential and index scans, last vacuum and analyze. It only
+    changes the check annotation, so turning it on or off restarts nothing.
+
     `password_from_secret` replaces the plaintext password in the pod
     annotation with an ENC[] handle the agent resolves from the role's Secret,
     through its `k8s.secrets` secret backend, and grants `readers` get on that
@@ -221,10 +226,11 @@ variable "datadog" {
     (`multi_secret_backends`); leave it null when `k8s.secrets` is its only one.
   EOT
   type = object({
-    username = optional(string, "datadog")
-    tags     = optional(list(string), [])
-    dbm      = optional(bool, false)
-    instance = optional(any, {})
+    username  = optional(string, "datadog")
+    tags      = optional(list(string), [])
+    dbm       = optional(bool, false)
+    relations = optional(bool, true)
+    instance  = optional(any, {})
     password_from_secret = optional(object({
       backend = optional(string)
       readers = optional(list(object({

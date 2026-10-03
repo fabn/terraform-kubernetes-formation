@@ -55,6 +55,8 @@ module "postgres" {
   # pg_monitor role the operator manages. Drop the block to skip it.
   datadog = {
     tags = ["env:example", "service:myapp-postgres"]
+    # Per-table metrics are on by default; opt out with:
+    # relations = false
   }
 }
 
