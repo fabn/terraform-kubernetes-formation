@@ -26,6 +26,15 @@ locals {
 
   datadog_secret = "${var.name}-datadog"
 
+  datadog_secret_ref = try(var.datadog.password_from_secret, null)
+  # The handle the agent's k8s.secrets backend resolves: `<namespace>/<secret>;<key>`,
+  # prefixed with `<backend>;` when the agent runs several backends.
+  datadog_password_handle = local.datadog_secret_ref == null ? null : (
+    local.datadog_secret_ref.backend == null
+    ? "ENC[${var.namespace}/${local.datadog_secret};password]"
+    : "ENC[${local.datadog_secret_ref.backend};${var.namespace}/${local.datadog_secret};password]"
+  )
+
   # Autodiscovery reads the check from the pod annotation keyed by container
   # name, and every instance pod's container is called `postgres`.
   datadog_annotations = var.datadog == null ? {} : {
@@ -37,10 +46,15 @@ locals {
             host     = "%%host%%"
             port     = 5432
             username = var.datadog.username
-            password = random_password.datadog[0].result
-            dbname   = var.database
-            dbm      = var.datadog.dbm
-            tags     = var.datadog.tags
+            # Indexing an object rather than a conditional, which would mark the
+            # handle sensitive too and hide the whole annotation from the plan.
+            password = {
+              handle    = local.datadog_password_handle
+              plaintext = random_password.datadog[0].result
+            }[local.datadog_password_handle != null ? "handle" : "plaintext"]
+            dbname = var.database
+            dbm    = var.datadog.dbm
+            tags   = var.datadog.tags
           },
           var.datadog.instance,
         )]
@@ -155,6 +169,48 @@ resource "kubernetes_secret_v1" "datadog_cred" {
   data = {
     username = var.datadog.username
     password = random_password.datadog[0].result
+  }
+}
+
+resource "kubernetes_role_v1" "datadog_secret_reader" {
+  count = local.datadog_secret_ref != null ? 1 : 0
+
+  metadata {
+    name      = "${local.datadog_secret}-reader"
+    namespace = var.namespace
+    labels    = local.labels
+  }
+
+  rule {
+    api_groups     = [""]
+    resources      = ["secrets"]
+    resource_names = [local.datadog_secret]
+    verbs          = ["get"]
+  }
+}
+
+resource "kubernetes_role_binding_v1" "datadog_secret_reader" {
+  count = local.datadog_secret_ref != null ? 1 : 0
+
+  metadata {
+    name      = "${local.datadog_secret}-reader"
+    namespace = var.namespace
+    labels    = local.labels
+  }
+
+  role_ref {
+    api_group = "rbac.authorization.k8s.io"
+    kind      = "Role"
+    name      = kubernetes_role_v1.datadog_secret_reader[0].metadata[0].name
+  }
+
+  dynamic "subject" {
+    for_each = local.datadog_secret_ref.readers
+    content {
+      kind      = "ServiceAccount"
+      name      = subject.value.name
+      namespace = subject.value.namespace
+    }
   }
 }
 
